@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Admin · Gafetes y Uniformes GEB</title>
+    <meta name="description" content="Panel de administración de inventario de gafetes y uniformes de GEB." />
+    <meta name="robots" content="noindex" />
+    <meta name="theme-color" content="#fbf9f4" />
+    <link rel="icon" href="assets/logo-geb.png" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@600;700&family=Manrope:wght@400;500;600;700;800&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="css/estilos.css" />
+  </head>
+  <body>
+    <header class="barra">
+      <div class="barra-in">
+        <a class="marca" href="admin.html">
+          <img src="assets/logo-geb.png" alt="" />
+          <span><b>Gafetes y Uniformes</b><small>Panel de administración</small></span>
+        </a>
+        <span class="espacio"></span>
+        <span class="tenue" id="quien"></span>
+        <button class="btn btn-chico oculto" type="button" id="salir">Salir</button>
+      </div>
+    </header>
+    <main class="contenedor" id="app"><div class="cargando">Cargando…</div></main>
+    <div class="toast" id="toast" role="status" aria-live="polite"></div>
+    <script type="module" src="js/admin/app.js"></script>
+  </body>
+</html>

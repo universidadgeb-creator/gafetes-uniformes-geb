@@ -1,0 +1,42 @@
+{
+  "firestore": {
+    "rules": "firestore.rules",
+    "indexes": "firestore.indexes.json"
+  },
+  "auth": {
+    "providers": {
+      "anonymous": true
+    }
+  },
+  "hosting": {
+    "public": ".",
+    "ignore": [
+      "firebase.json",
+      "firestore.rules",
+      "firestore.indexes.json",
+      "package.json",
+      "package-lock.json",
+      "README.md",
+      "**/.*",
+      "**/node_modules/**",
+      "scripts/**",
+      "pruebas/**",
+      "privado/**"
+    ],
+    "headers": [
+      {
+        "source": "**/*.@(html|js|css)",
+        "headers": [{ "key": "Cache-Control", "value": "no-cache" }]
+      }
+    ]
+  },
+  "emulators": {
+    "singleProjectMode": true,
+    "auth": { "port": 9097 },
+    "firestore": { "port": 8083, "websocketPort": 9153 },
+    "hosting": { "port": 5190 },
+    "hub": { "port": 4403 },
+    "logging": { "port": 4503 },
+    "ui": { "enabled": true, "port": 4003 }
+  }
+}

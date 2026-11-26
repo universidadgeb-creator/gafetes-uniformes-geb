@@ -1,0 +1,23 @@
+{
+  "name": "gafetes-uniformes-geb",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Inventario de gafetes y uniformes de GEB: panel de administración, pedidos de colaboradores, costos, rotación y presupuesto.",
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "emuladores": "node scripts/emuladores.mjs",
+    "sembrar": "node scripts/sembrar.mjs",
+    "probar": "node --test pruebas/metricas.test.mjs",
+    "probar-reglas": "node scripts/emuladores.mjs --exec \"node --test pruebas/reglas.test.mjs\"",
+    "nueva-clave": "node scripts/nueva-clave.mjs",
+    "deploy:reglas": "firebase deploy --only firestore:rules,auth"
+  },
+  "devDependencies": {
+    "@firebase/rules-unit-testing": "^5.0.0",
+    "firebase": "12.19.0",
+    "firebase-tools": "15.32.1"
+  }
+}

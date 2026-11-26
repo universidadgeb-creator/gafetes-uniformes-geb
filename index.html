@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Pedido de gafete y uniforme · GEB</title>
+    <meta name="description" content="Solicita tu gafete o uniforme de GEB y consulta el estado de tu pedido." />
+    <meta name="theme-color" content="#fbf9f4" />
+    <link rel="icon" href="assets/logo-geb.png" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@600;700&family=Manrope:wght@400;500;600;700;800&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="css/estilos.css" />
+  </head>
+  <body>
+    <header class="barra">
+      <div class="barra-in">
+        <a class="marca" href="./">
+          <img src="assets/logo-geb.png" alt="" />
+          <span><b>Gafetes y Uniformes</b><small>Capital Humano · GEB</small></span>
+        </a>
+        <span class="espacio"></span>
+        <nav class="segmentado" id="nav" aria-label="Secciones">
+          <button type="button" data-vista="pedido" aria-pressed="true">Hacer pedido</button>
+          <button type="button" data-vista="consulta" aria-pressed="false">Mis pedidos</button>
+        </nav>
+      </div>
+    </header>
+    <main class="contenedor angosto" id="app"><div class="cargando">Cargando…</div></main>
+    <div class="toast" id="toast" role="status" aria-live="polite"></div>
+    <footer class="pie-pagina">Capital Humano · Universidad GEB</footer>
+    <script type="module" src="js/colaborador.js"></script>
+  </body>
+</html>

@@ -1,0 +1,106 @@
+rules_version = '2';
+
+// Reglas de seguridad de Gafetes y Uniformes GEB.
+//
+// - Colaboradores: entran con sesión anónima. Pueden crear pedidos (validados aquí),
+//   ver sus propios pedidos y consultar uno por folio. No ven inventario ni costos.
+// - Administradores: un dispositivo se vuelve admin al escribir la clave de admin.
+//   Aquí solo está la huella SHA-256 de la clave; la clave real NO está en el repositorio
+//   (se genera con `npm run nueva-clave` y queda en privado/clave-admin.txt).
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function autenticado() {
+      return request.auth != null;
+    }
+
+    function esAdmin() {
+      return autenticado() && exists(/databases/$(database)/documents/admins/$(request.auth.uid));
+    }
+
+    function texto(v, min, max) {
+      return v is string && v.size() >= min && v.size() <= max;
+    }
+
+    function textoOpcional(m, campo, max) {
+      return !(campo in m) || m[campo] == null || (m[campo] is string && m[campo].size() <= max);
+    }
+
+    // CLAVE_ADMIN_INICIO (lo reescribe scripts/nueva-clave.mjs)
+    function claveCorrecta(clave) {
+      return clave is string
+        && hashing.sha256(clave).toHexString().lower() == '301a01612d62d0633c421fd3107391fa74c464d3c9adacc153144434e2334869';
+    }
+    // CLAVE_ADMIN_FIN
+
+    // Opciones que ve el formulario del colaborador (sucursales, áreas, artículos sin costos).
+    match /publico/{docId} {
+      allow read: if true;
+      allow write: if esAdmin();
+    }
+
+    // Dispositivos con acceso de administrador.
+    match /admins/{uid} {
+      allow get: if autenticado() && (request.auth.uid == uid || esAdmin());
+      allow list: if esAdmin();
+      allow create: if autenticado()
+        && request.auth.uid == uid
+        && request.resource.data.keys().hasOnly(['nombre', 'clave', 'creadoEn'])
+        && texto(request.resource.data.nombre, 2, 80)
+        && claveCorrecta(request.resource.data.clave)
+        && request.resource.data.creadoEn == request.time;
+      allow update: if false;
+      allow delete: if esAdmin();
+    }
+
+    // Solo administradores.
+    match /config/{docId} {
+      allow read, write: if esAdmin();
+    }
+    match /articulos/{id} {
+      allow read, write: if esAdmin();
+    }
+    match /movimientos/{id} {
+      allow read, write: if esAdmin();
+    }
+
+    // Pedidos (tickets) de los colaboradores.
+    function pedidoValido(folio) {
+      let d = request.resource.data;
+      return d.keys().hasOnly(['folio', 'uid', 'nombre', 'solicitadoPor', 'fecha', 'unidad', 'sucursal',
+                               'rol', 'area', 'tipoSolicitud', 'razon', 'detalleRazon', 'articulos',
+                               'comentarios', 'estado', 'creadoEn'])
+        && d.keys().hasAll(['folio', 'uid', 'nombre', 'fecha', 'sucursal', 'rol', 'area',
+                            'tipoSolicitud', 'articulos', 'estado', 'creadoEn'])
+        && folio.matches('^GU-[A-Z0-9]{6}$')
+        && d.folio == folio
+        && d.uid == request.auth.uid
+        && texto(d.nombre, 3, 120)
+        && textoOpcional(d, 'solicitadoPor', 120)
+        && d.fecha is string && d.fecha.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$')
+        && textoOpcional(d, 'unidad', 80)
+        && texto(d.sucursal, 2, 120)
+        && texto(d.rol, 2, 120)
+        && texto(d.area, 2, 120)
+        && (
+          (d.tipoSolicitud == 'nuevo' && d.get('razon', null) == null)
+          || (d.tipoSolicitud == 'reposicion'
+              && d.get('razon', '') in ['extravio', 'desgaste', 'mal_estado', 'cambio_talla', 'otra'])
+        )
+        && textoOpcional(d, 'detalleRazon', 600)
+        && d.articulos is list && d.articulos.size() >= 1 && d.articulos.size() <= 15
+        && textoOpcional(d, 'comentarios', 600)
+        && d.estado == 'nuevo'
+        && d.creadoEn == request.time;
+    }
+
+    match /pedidos/{folio} {
+      // Quien conoce el folio puede ver ese pedido (el folio es aleatorio y no se puede listar).
+      allow get: if autenticado();
+      allow list: if esAdmin() || (autenticado() && resource.data.uid == request.auth.uid);
+      allow create: if autenticado() && pedidoValido(folio);
+      allow update, delete: if esAdmin();
+    }
+  }
+}
