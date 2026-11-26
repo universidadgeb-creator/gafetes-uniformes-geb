@@ -11,6 +11,7 @@ Sistema de Capital Humano para controlar el inventario de **gafetes y uniformes*
 
 **Colaborador** (sin cuenta, desde el celular)
 - Pide gafete y/o uniforme con: nombre, fecha, sucursal, rol, área, tipo de solicitud (nuevo ingreso o reposición) y, si es reposición, la razón: extravío, desgaste, mal estado, cambio de talla u otra.
+- Los uniformes salen en **listas desplegables por tipo de prenda**, con buscador y filtro Hombre/Mujer; arriba, **Recomendados para ti** según su rol y su área.
 - Puede indicar si lo pide para alguien de su equipo (queda registrado **quién lo solicita**).
 - Recibe un **folio** y ve el avance: Recibido → En proceso → Listo para entregar → Entregado (o No procede), con el mensaje que le deje Capital Humano.
 
@@ -19,7 +20,7 @@ Sistema de Capital Humano para controlar el inventario de **gafetes y uniformes*
 - **Pedidos:** bandeja de tickets con semáforo de tiempo. Al entregar, el sistema propone qué artículo y talla descontar, registra el costo y cierra el ticket.
 - **Inventario:** cada artículo (tipo, modelo/color, unidad de negocio, talla) con **real, deseado, diferencia, costo por pieza, costo del inventario y costo del faltante**. Alta de artículos con varias tallas, compras, conteo físico, importación y descarga en Excel.
 - **Gafetes por colaborador:** un renglón por colaborador con **sucursal, cantidad de gafetes (reposición) y nombre**; el primero cuenta como nuevo ingreso y los demás como reposición. No cuenta porta gafetes ni cordones. Alta manual o con la hoja *Gafetes* de la plantilla; si hay un gafete dado de alta por sucursal (columna *Unidad*), se usa el de su sucursal; se puede descontar o no del inventario.
-- **Uniformes con color, género y rol:** cada artículo puede llevar color, género (Hombre/Mujer/Unisex) y para qué rol(es) es. En el formulario, al colaborador le salen primero los de su rol.
+- **Uniformes con color, género, rol y área:** cada artículo puede llevar color, género (Hombre/Mujer/Unisex), para qué rol(es) es y su área. En el formulario, al colaborador le salen como recomendados los de su rol o su área.
 - **Entregas y movimientos:** bitácora de entregas (a quién, sucursal, rol, área, nuevo ingreso o reposición, razón, quién lo pidió, costo), compras y ajustes. Registro directo de entregas (por ejemplo, el kit de inducción) y anulación con reversa de inventario.
 - **Presupuesto:** compra sugerida por artículo y costo total para 1, 3, 6 o 12 meses, con base en el consumo real de los últimos 3, 6 o 12 meses. Separa rotación y reposición y permite simular cuántos ingresos esperas al mes.
 - **Ajustes:** link para colaboradores, tiempo objetivo de respuesta, catálogos (sucursales, áreas, roles, tipos de gafete y uniforme, tallas) y accesos de admin.
@@ -33,7 +34,7 @@ Sistema de Capital Humano para controlar el inventario de **gafetes y uniformes*
 
 ## Plantilla de importación
 
-- **Uniformes:** Categoría, Tipo, Modelo / descripción, Color, Género, Para qué rol, Unidad, Talla, Costo por pieza, Real, Deseado, Proveedor (un renglón por talla). Para completar color, género o rol de lo que ya existe: *Descargar Excel*, llenar y volver a subir (la columna ID identifica cada artículo).
+- **Uniformes:** Categoría, Tipo, Modelo / descripción, Color, Género, Para qué rol, Área, Unidad, Talla, Costo por pieza, Real, Deseado, Proveedor (un renglón por talla). Para completar color, género, rol o área de lo que ya existe: *Descargar Excel*, llenar y volver a subir (la columna ID identifica cada artículo).
 - **Gafetes:** Nombre del colaborador, Sucursal, Reposición (cantidad de gafetes), Fecha (opcional). Al importar se elige si la cantidad es el total (incluye el primer gafete) o solo reposiciones. Si el colaborador ya tiene gafetes, solo se agregan los que falten, así que volver a subir el archivo no duplica. La sucursal puede venir corta ("Valle Real", "GTM", "ITESO").
 - Las hojas *Sucursales* y *Roles* son de consulta. Los renglones que dicen "Ejemplo" se ignoran.
 
