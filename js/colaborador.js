@@ -102,44 +102,145 @@ function gruposDisponibles(sucursal) {
 // Tipo · modelo · color · género
 const etiquetaGrupo = (g) => nombreArticulo(g)
 
-// Los artículos marcados para el rol del colaborador salen primero.
-function htmlArticulos(sucursal, rol = '') {
+// Género del artículo: el campo, o lo que diga el nombre ("Playera coach / Mujer").
+function generoDe(g) {
+  if (g.genero) return g.genero
+  const t = normalizar(`${g.tipo} ${g.nombre}`)
+  if (/\b(mujer|dama)\b/.test(t)) return 'Mujer'
+  if (/\b(hombre|caballero)\b/.test(t)) return 'Hombre'
+  return ''
+}
+
+function tarjetaArticulo(g, motivo = '') {
+  const tallas = [...(g.tallas ?? [])].sort((a, b) => ordenTalla(a) - ordenTalla(b))
+  const buscar = normalizar(`${etiquetaGrupo(g)} ${g.rol ?? ''} ${g.area ?? ''} ${g.color ?? ''}`)
+  return `
+    <div class="articulo-pedido" data-buscar="${h(buscar)}" data-genero="${h(generoDe(g))}">
+      <label class="articulo-check">
+        <input type="checkbox" name="art" value="${h(g.id)}" />
+        <span class="nombre">${h(etiquetaGrupo(g))}${
+          g.rol && !motivo ? `<br><span class="tenue" style="font-weight:500">Para: ${h(g.rol)}</span>` : ''
+        }</span>
+        ${motivo ? `<span class="badge sin-punto tono-ok">${h(motivo)}</span>` : ''}
+        ${g.unidad && g.unidad !== 'Todas' ? `<span class="tenue">${h(g.unidad)}</span>` : ''}
+      </label>
+      <div class="extra">
+        ${
+          tallas.length
+            ? `<label>Talla <select name="talla-${h(g.id)}"><option value="">Elige…</option>${tallas.map((t) => `<option>${h(t)}</option>`).join('')}</select></label>`
+            : ''
+        }
+        <label>Cantidad <select name="cant-${h(g.id)}">${[1, 2, 3, 4, 5].map((n) => `<option>${n}</option>`).join('')}</select></label>
+      </div>
+    </div>`
+}
+
+// Gafetes en lista corta; uniformes en desplegables por tipo de prenda, con buscador, filtro por
+// género y arriba los recomendados para el rol o el área del colaborador.
+function htmlArticulos(sucursal, rol = '', area = '') {
   const grupos = gruposDisponibles(sucursal)
   if (!grupos.length) return '<p class="muted">Todavía no hay artículos configurados para tu unidad. Escribe lo que necesitas en comentarios.</p>'
   const miRol = normalizar(rol)
-  const esMio = (g) =>
-    Boolean(miRol && g.rol && normalizar(g.rol).split(/\s*,\s*/).some((r) => r && (miRol.includes(r) || r.includes(miRol))))
+  const miArea = normalizar(area)
+  const porRol = (g) => Boolean(miRol && g.rol && normalizar(g.rol).split(/\s*,\s*/).some((r) => r && (miRol.includes(r) || r.includes(miRol))))
+  const porArea = (g) => Boolean(miArea && g.area && normalizar(g.area) === miArea)
+  const motivo = (g) => (porRol(g) ? 'Para tu rol' : porArea(g) ? 'Para tu área' : '')
   let html = ''
-  for (const cat of ['gafete', 'uniforme']) {
-    const deCat = grupos.filter((g) => g.categoria === cat).sort((a, b) => Number(esMio(b)) - Number(esMio(a)))
-    if (!deCat.length) continue
-    html += `<p class="grupo-titulo">${cat === 'gafete' ? 'Gafete' : 'Uniforme'}</p>`
-    for (const g of deCat) {
-      const tallas = [...(g.tallas ?? [])].sort((a, b) => ordenTalla(a) - ordenTalla(b))
-      html += `
-        <div class="articulo-pedido">
-          <label class="articulo-check">
-            <input type="checkbox" name="art" value="${h(g.id)}" />
-            <span class="nombre">${h(etiquetaGrupo(g))}${
-              g.rol && !esMio(g) ? `<br><span class="tenue" style="font-weight:500">Para: ${h(g.rol)}</span>` : ''
-            }</span>
-            ${esMio(g) ? '<span class="badge sin-punto tono-ok">Para tu rol</span>' : ''}
-            ${g.unidad && g.unidad !== 'Todas' ? `<span class="tenue">${h(g.unidad)}</span>` : ''}
-          </label>
-          <div class="extra">
-            ${
-              tallas.length
-                ? `<label>Talla <select name="talla-${h(g.id)}"><option value="">Elige…</option>${tallas
-                    .map((t) => `<option>${h(t)}</option>`)
-                    .join('')}</select></label>`
-                : ''
-            }
-            <label>Cantidad <select name="cant-${h(g.id)}">${[1, 2, 3, 4, 5].map((n) => `<option>${n}</option>`).join('')}</select></label>
-          </div>
-        </div>`
-    }
+  const gafetes = grupos.filter((g) => g.categoria === 'gafete')
+  if (gafetes.length) html += `<p class="grupo-titulo">Gafete</p>${gafetes.map((g) => tarjetaArticulo(g)).join('')}`
+  const uniformes = grupos.filter((g) => g.categoria === 'uniforme')
+  if (!uniformes.length) return html
+  const conGenero = uniformes.some((g) => generoDe(g) === 'Hombre') && uniformes.some((g) => generoDe(g) === 'Mujer')
+  html += `
+    <p class="grupo-titulo" style="margin-top:12px">Uniforme</p>
+    <div class="buscador-uniformes">
+      <input type="search" id="buscar-prenda" placeholder="Buscar prenda, color o rol…" aria-label="Buscar uniforme" autocomplete="off" />
+      ${
+        conGenero
+          ? `<div class="chips-radio" role="radiogroup" aria-label="Ver uniformes de">
+              <label><input type="radio" name="ver-genero" value="" checked />Todos</label>
+              <label><input type="radio" name="ver-genero" value="Hombre" />Hombre</label>
+              <label><input type="radio" name="ver-genero" value="Mujer" />Mujer</label>
+            </div>`
+          : ''
+      }
+    </div>`
+  const ordenar = (lista) => lista.sort((a, b) => etiquetaGrupo(a).localeCompare(etiquetaGrupo(b), 'es'))
+  const recomendados = ordenar(uniformes.filter((g) => motivo(g)))
+  if (recomendados.length) {
+    html += `<details class="grupo-prendas recomendados" data-grupo="__recomendados" open>
+      <summary>Recomendados para ti <span class="tenue cuenta">${recomendados.length}</span><span class="elegidos"></span></summary>
+      <div class="lista-articulos">${recomendados.map((g) => tarjetaArticulo(g, motivo(g))).join('')}</div>
+    </details>`
   }
+  const porTipo = new Map()
+  for (const g of uniformes.filter((x) => !motivo(x))) {
+    const tipo = g.tipo || 'Otros'
+    porTipo.set(tipo, [...(porTipo.get(tipo) ?? []), g])
+  }
+  for (const [tipo, lista] of [...porTipo].sort((a, b) => a[0].localeCompare(b[0], 'es'))) {
+    html += `<details class="grupo-prendas" data-grupo="${h(tipo)}">
+      <summary>${h(tipo)} <span class="tenue cuenta">${lista.length}</span><span class="elegidos"></span></summary>
+      <div class="lista-articulos">${ordenar(lista).map((g) => tarjetaArticulo(g)).join('')}</div>
+    </details>`
+  }
+  html += '<p class="muted" id="sin-resultados" hidden>No encontramos esa prenda. Prueba con otra palabra o escríbela en comentarios.</p>'
   return html
+}
+
+// Filtra sin volver a pintar (así no se pierde lo que ya marcó). Lo marcado nunca se oculta.
+function aplicarFiltroUniformes() {
+  const caja = document.getElementById('articulos')
+  if (!caja) return
+  const q = normalizar(document.getElementById('buscar-prenda')?.value ?? '')
+  const genero = caja.querySelector('input[name="ver-genero"]:checked')?.value ?? ''
+  let visibles = 0
+  for (const d of caja.querySelectorAll('details.grupo-prendas')) {
+    let n = 0
+    for (const it of d.querySelectorAll('.articulo-pedido')) {
+      const g = it.dataset.genero
+      const ok =
+        it.querySelector('input[name="art"]').checked ||
+        ((!q || it.dataset.buscar.includes(q)) && (!genero || !g || g === genero || g === 'Unisex'))
+      it.hidden = !ok
+      if (ok) n++
+    }
+    d.hidden = n === 0
+    d.querySelector('.cuenta').textContent = n
+    if (q && n) d.open = true
+    visibles += n
+  }
+  const aviso = document.getElementById('sin-resultados')
+  if (aviso) aviso.hidden = visibles > 0
+  marcarElegidos()
+}
+
+function marcarElegidos() {
+  for (const d of document.querySelectorAll('#articulos details.grupo-prendas')) {
+    const k = d.querySelectorAll('input[name="art"]:checked').length
+    d.querySelector('.elegidos').textContent = k ? ` · ${k} elegido${k > 1 ? 's' : ''}` : ''
+  }
+}
+
+// Vuelve a pintar la lista (cambió sucursal, rol o área) conservando lo marcado, tallas, búsqueda y desplegables abiertos.
+function repintarArticulos(form) {
+  const caja = document.getElementById('articulos')
+  const marcados = new Set([...caja.querySelectorAll('input[name="art"]:checked')].map((i) => i.value))
+  const valores = Object.fromEntries([...caja.querySelectorAll('select')].map((s) => [s.name, s.value]))
+  const abiertos = new Set([...caja.querySelectorAll('details.grupo-prendas[open]')].map((d) => d.dataset.grupo))
+  const busqueda = document.getElementById('buscar-prenda')?.value ?? ''
+  const genero = caja.querySelector('input[name="ver-genero"]:checked')?.value ?? ''
+  caja.innerHTML = htmlArticulos(form.sucursal.value, form.rol.value, form.area.value)
+  for (const i of caja.querySelectorAll('input[name="art"]')) i.checked = marcados.has(i.value)
+  for (const s of caja.querySelectorAll('select')) if (valores[s.name]) s.value = valores[s.name]
+  for (const d of caja.querySelectorAll('details.grupo-prendas')) {
+    if (abiertos.has(d.dataset.grupo) || d.querySelector('input[name="art"]:checked')) d.open = true
+  }
+  const buscador = document.getElementById('buscar-prenda')
+  if (buscador) buscador.value = busqueda
+  const radio = caja.querySelector(`input[name="ver-genero"][value="${genero}"]`)
+  if (radio) radio.checked = true
+  aplicarFiltroUniformes()
 }
 
 function opcionesSucursal(seleccion) {
@@ -217,7 +318,7 @@ function mostrarFormulario() {
 
       <div class="tarjeta">
         <div class="tarjeta-titulo"><h2><span class="seccion-num">3</span>¿Qué necesitas?</h2><p>Marca uno o varios</p></div>
-        <div class="lista-articulos" id="articulos">${htmlArticulos(datos.sucursal, datos.rol)}</div>
+        <div class="lista-articulos" id="articulos">${htmlArticulos(datos.sucursal, datos.rol, datos.area)}</div>
         <label class="campo" style="margin-top:16px"><span>Comentarios (opcional)</span>
           <textarea name="comentarios" maxlength="600" rows="2" placeholder="Algo más que debamos saber"></textarea></label>
       </div>
@@ -239,16 +340,19 @@ function mostrarFormulario() {
         form.razon.value === 'otra' ? 'Cuéntanos qué pasó <em>*</em>' : 'Cuéntanos más (opcional)'
     }
     if (n === 'quien') document.getElementById('bloque-solicitante').classList.toggle('oculto', form.quien.value !== 'otro')
-    if (n === 'sucursal' || n === 'rol') {
-      // Se vuelve a pintar la lista conservando lo que ya marcó (artículo, talla y cantidad).
-      const marcados = new Set([...form.querySelectorAll('input[name="art"]:checked')].map((i) => i.value))
-      const valores = Object.fromEntries([...form.querySelectorAll('#articulos select')].map((s) => [s.name, s.value]))
-      document.getElementById('articulos').innerHTML = htmlArticulos(form.sucursal.value, form.rol.value)
-      for (const i of form.querySelectorAll('input[name="art"]')) i.checked = marcados.has(i.value)
-      for (const s of form.querySelectorAll('#articulos select')) if (valores[s.name]) s.value = valores[s.name]
-    }
+    if (n === 'sucursal' || n === 'rol' || n === 'area') repintarArticulos(form)
+    if (n === 'ver-genero') aplicarFiltroUniformes()
+    if (n === 'art') marcarElegidos()
     e.target.classList.remove('invalido')
   })
+  form.addEventListener('input', (e) => {
+    if (e.target.id === 'buscar-prenda') aplicarFiltroUniformes()
+  })
+  // Enter en el buscador no envía el pedido.
+  form.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && e.target.id === 'buscar-prenda') e.preventDefault()
+  })
+  aplicarFiltroUniformes()
   form.addEventListener('submit', (e) => {
     e.preventDefault()
     enviar(form)

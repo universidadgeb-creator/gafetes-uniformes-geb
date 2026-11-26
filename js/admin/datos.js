@@ -42,6 +42,7 @@ export async function crearArticulos(base, variantes) {
       color: base.color || null,
       genero: base.genero || null,
       rol: base.rol || null,
+      area: base.area || null,
       activo: true,
       creadoEn: serverTimestamp(),
       actualizadoEn: serverTimestamp(),
@@ -94,13 +95,14 @@ export async function importarArticulos(filas) {
         color: f.color || null,
         genero: f.genero || null,
         rol: f.rol || null,
+        area: f.area || null,
       }
       a.grupo = claveGrupo(a)
       const porSuId = f.id ? porId.get(f.id) : null
       const existente = porSuId ?? porClave.get(`${a.grupo}|${a.talla ?? ''}`) ?? porClaveBase.get(`${sinExtras(a)}|${a.talla ?? ''}`)
       if (existente) {
         // Con ID se respeta todo lo del archivo; sin ID solo se llenan color, género y rol si vienen.
-        const datos = porSuId ? a : { ...a, color: a.color ?? existente.color ?? null, genero: a.genero ?? existente.genero ?? null, rol: a.rol ?? existente.rol ?? null }
+        const datos = porSuId ? a : { ...a, color: a.color ?? existente.color ?? null, genero: a.genero ?? existente.genero ?? null, rol: a.rol ?? existente.rol ?? null, area: a.area ?? existente.area ?? null }
         datos.grupo = claveGrupo(datos)
         lote.update(doc(db, 'articulos', existente.id), {
           ...datos,
@@ -297,6 +299,7 @@ export function gruposDesdeArticulos(articulos) {
       color: a.color || null,
       genero: a.genero || null,
       rol: a.rol || null,
+      area: a.area || null,
       tallas: [],
     }
     if (a.talla && !g.tallas.includes(a.talla)) g.tallas.push(a.talla)

@@ -505,3 +505,16 @@ td.sangria { padding-left: 26px; }
   .barra .segmentado button { padding: 6px 9px; font-size: 0.8rem; }
   .marca b { font-size: 1.1rem; }
 }
+
+/* Uniformes del formulario: buscador y desplegables por tipo de prenda */
+.buscador-uniformes { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin: 2px 0 12px; }
+.buscador-uniformes input[type='search'] { flex: 1 1 220px; }
+.grupo-prendas { border: 1px solid var(--borde); border-radius: var(--radio-chico); background: var(--superficie); margin-bottom: 8px; }
+.grupo-prendas > summary { cursor: pointer; padding: 13px 14px; font-weight: 750; list-style: none; display: flex; align-items: center; gap: 8px; }
+.grupo-prendas > summary::-webkit-details-marker { display: none; }
+.grupo-prendas > summary::before { content: '›'; font-size: 1.3rem; line-height: 1; color: var(--texto-3); transition: transform 0.15s; width: 12px; }
+.grupo-prendas[open] > summary::before { transform: rotate(90deg); }
+.grupo-prendas .cuenta { font-weight: 600; }
+.grupo-prendas .elegidos { color: var(--ok); font-weight: 750; font-size: 0.86rem; }
+.grupo-prendas > .lista-articulos { padding: 0 10px 10px; }
+.grupo-prendas.recomendados { border-color: var(--oro); background: #fffaf1; }

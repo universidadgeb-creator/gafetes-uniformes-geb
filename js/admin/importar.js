@@ -58,6 +58,7 @@ export function leerArticulo(fila) {
     nombre: texto(v.modelodescripcion ?? v.modelocolor ?? v.modelo ?? v.nombre),
     color: texto(v.color),
     genero: leerGenero(v.genero ?? v.sexo),
+    area: texto(v.area),
     rol: texto(v.paraquerol ?? v.rol ?? v.roles ?? v.puesto).replace(/\s*,\s*/g, ', ').replace(/,\s*$/, ''),
     unidad: !unidad || normalizar(unidad).startsWith('toda') ? 'Todas' : unidad,
     talla: texto(v.talla) || null,

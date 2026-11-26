@@ -116,7 +116,7 @@ function filtrados() {
     if (filtros.categoria && a.categoria !== filtros.categoria) return false
     if (filtros.unidad && (a.unidad || 'Todas') !== filtros.unidad) return false
     if (filtros.resurtir && !['agotado', 'bajo'].includes(estadoStock(a))) return false
-    if (t && !normalizar(`${a.tipo} ${a.nombre} ${a.color ?? ''} ${a.genero ?? ''} ${a.rol ?? ''} ${a.talla} ${a.unidad} ${a.proveedor ?? ''}`).includes(t)) return false
+    if (t && !normalizar(`${a.tipo} ${a.nombre} ${a.color ?? ''} ${a.genero ?? ''} ${a.rol ?? ''} ${a.area ?? ''} ${a.talla} ${a.unidad} ${a.proveedor ?? ''}`).includes(t)) return false
     return true
   })
 }
@@ -142,7 +142,7 @@ export function actualizar() {
       grupoActual = a.grupo
       const hermanos = lista.filter((x) => x.grupo === a.grupo)
       const valor = hermanos.reduce((s, x) => s + Math.max(0, Number(x.real) || 0) * (Number(x.costo) || 0), 0)
-      filas += `<tr class="grupo-fila"><td colspan="9"><b>${h(nombreArticulo(a))}</b> <span class="tenue">· ${h(CATEGORIAS[a.categoria])}${a.rol ? ` · Para: ${h(a.rol)}` : ''} · ${h(a.unidad && a.unidad !== 'Todas' ? a.unidad : 'Todas las unidades')}${a.proveedor ? ` · ${h(a.proveedor)}` : ''} · ${dinero(valor)} en stock</span></td></tr>`
+      filas += `<tr class="grupo-fila"><td colspan="9"><b>${h(nombreArticulo(a))}</b> <span class="tenue">· ${h(CATEGORIAS[a.categoria])}${a.area ? ` · Área: ${h(a.area)}` : ''}${a.rol ? ` · Para: ${h(a.rol)}` : ''} · ${h(a.unidad && a.unidad !== 'Todas' ? a.unidad : 'Todas las unidades')}${a.proveedor ? ` · ${h(a.proveedor)}` : ''} · ${dinero(valor)} en stock</span></td></tr>`
     }
     const real = Number(a.real) || 0
     const deseado = Number(a.deseado) || 0
@@ -381,6 +381,9 @@ function camposExtra(a = {}) {
     <label class="campo"><span>Color</span><input id="color" maxlength="40" list="dl-colores" value="${h(a.color ?? '')}" placeholder="Ej. Azul marino" />
       <datalist id="dl-colores">${colores.map((c) => `<option value="${h(c)}"></option>`).join('')}</datalist></label>
     <label class="campo"><span>Género</span><select id="genero"><option value="">—</option>${GENEROS.map((g) => `<option ${g === a.genero ? 'selected' : ''}>${g}</option>`).join('')}</select></label>
+    <label class="campo"><span>Área</span><select id="area"><option value="">—</option>${estado.opciones.areas
+      .map((x) => `<option ${x === a.area ? 'selected' : ''}>${h(x)}</option>`)
+      .join('')}${a.area && !estado.opciones.areas.includes(a.area) ? `<option selected>${h(a.area)}</option>` : ''}</select></label>
     <label class="campo" style="grid-column:1/-1"><span>Para qué rol <small>(uno o varios, separados por coma)</small></span>
       <input id="rol" maxlength="160" list="dl-roles-art" value="${h(a.rol ?? '')}" placeholder="Ej. Coach Deportivo, Líder Deportivo" />
       <datalist id="dl-roles-art">${estado.opciones.roles.map((r) => `<option value="${h(r)}"></option>`).join('')}</datalist></label>`
@@ -389,6 +392,7 @@ function camposExtra(a = {}) {
 const leerExtra = (dlg) => ({
   color: dlg.querySelector('#color').value.trim() || null,
   genero: dlg.querySelector('#genero').value || null,
+  area: dlg.querySelector('#area').value || null,
   rol: dlg.querySelector('#rol').value.trim().replace(/\s*,\s*/g, ', ').replace(/,\s*$/, '') || null,
 })
 
@@ -781,7 +785,7 @@ function dialogoConteo(articuloId = '') {
 
 // ---------- Excel ----------
 
-const COLUMNAS_UNIFORMES = ['Categoría', 'Tipo', 'Modelo / descripción', 'Color', 'Género', 'Para qué rol', 'Unidad', 'Talla', 'Costo por pieza', 'Real', 'Deseado', 'Proveedor']
+const COLUMNAS_UNIFORMES = ['Categoría', 'Tipo', 'Modelo / descripción', 'Color', 'Género', 'Para qué rol', 'Área', 'Unidad', 'Talla', 'Costo por pieza', 'Real', 'Deseado', 'Proveedor']
 const COLUMNAS_GAFETES = ['Nombre del colaborador', 'Sucursal', 'Reposición (cantidad de gafetes)', 'Fecha (opcional)']
 const filaDe = (columnas, valores) => Object.fromEntries(columnas.map((c, i) => [c, valores[i] ?? '']))
 
@@ -797,6 +801,7 @@ function exportar() {
       Color: a.color ?? '',
       Género: a.genero ?? '',
       'Para qué rol': a.rol ?? '',
+      Área: a.area ?? '',
       Unidad: a.unidad ?? 'Todas',
       Talla: a.talla ?? '',
       'Costo por pieza': costo,
@@ -848,8 +853,8 @@ function descargarPlantilla() {
     {
       nombre: 'Uniformes',
       filas: [
-        filaDe(COLUMNAS_UNIFORMES, ['Uniforme', 'Playera', 'Ejemplo playera coach', 'Negro', 'Hombre', 'Coach Deportivo, Líder Deportivo', 'Vivo 47', 'M', 250, 10, 15, '']),
-        filaDe(COLUMNAS_UNIFORMES, ['Uniforme', 'Playera', 'Ejemplo playera coach', 'Negro', 'Mujer', 'Coach Deportivo, Líder Deportivo', 'Vivo 47', 'CH', 250, 8, 12, '']),
+        filaDe(COLUMNAS_UNIFORMES, ['Uniforme', 'Playera', 'Ejemplo playera coach', 'Negro', 'Hombre', 'Coach Deportivo, Líder Deportivo', 'Deportes', 'Vivo 47', 'M', 250, 10, 15, '']),
+        filaDe(COLUMNAS_UNIFORMES, ['Uniforme', 'Playera', 'Ejemplo playera coach', 'Negro', 'Mujer', 'Coach Deportivo, Líder Deportivo', 'Deportes', 'Vivo 47', 'CH', 250, 8, 12, '']),
       ],
     },
     {
@@ -875,8 +880,8 @@ function dialogoImportar() {
     ancho: true,
     cuerpo: `
       <ol style="margin:0;padding-left:20px;display:grid;gap:6px">
-        <li>Descarga la plantilla. Tiene dos hojas: <b>Uniformes</b> (un renglón por talla: color, género, para qué rol, costo, real y deseado) y <b>Gafetes</b> (un renglón por colaborador: nombre, sucursal y cantidad de gafetes).</li>
-        <li>Para completar color, género o rol de lo que ya tienes, usa <b>Descargar Excel</b>, llena esas columnas y súbelo aquí (la columna ID dice qué artículo es).</li>
+        <li>Descarga la plantilla. Tiene dos hojas: <b>Uniformes</b> (un renglón por talla: color, género, rol, área, costo, real y deseado) y <b>Gafetes</b> (un renglón por colaborador: nombre, sucursal y cantidad de gafetes).</li>
+        <li>Para completar color, género, rol o área de lo que ya tienes, usa <b>Descargar Excel</b>, llena esas columnas y súbelo aquí (la columna ID dice qué artículo es).</li>
         <li>Los renglones que dicen "Ejemplo" se ignoran. Si un colaborador ya tiene gafetes registrados, solo se agregan los que falten.</li>
       </ol>
       <div class="acciones"><button class="btn" type="button" id="plantilla">Descargar plantilla</button></div>
