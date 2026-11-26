@@ -67,7 +67,7 @@ test('fechas de Excel', () => {
 
 test('renglón de gafete con cantidad', () => {
   const g = leerGafete({ 'Nombre del colaborador': '  Ana   López ', Sucursal: 'Gourmetería', 'Reposición (cantidad de gafetes)': 3 }, { catalogo, fechaPorDefecto: '2026-11-26' })
-  assert.deepEqual(g, { nombre: 'Ana López', sucursal: 'Vivo 47 · Gourmetería', sucursalReconocida: true, cantidad: 3, siNo: null, razon: null, detalle: null, fecha: '2026-11-26', sinFecha: true })
+  assert.deepEqual(g, { nombre: 'Ana López', sucursal: 'Vivo 47 · Gourmetería', sucursalReconocida: true, cantidad: 3, siNo: null, costo: null, razon: null, detalle: null, fecha: '2026-11-26', sinFecha: true })
   const n = leerGafete({ Colaborador: 'Luis Pérez', Sucursal: 'Iteso', Reposición: 1, Fecha: 46350 }, { catalogo, fechaPorDefecto: '2026-11-26' })
   assert.equal(n.cantidad, 1)
   assert.equal(n.fecha, '2026-11-24')
@@ -141,4 +141,17 @@ test('nombre y clave de artículo con color y género', () => {
   assert.notEqual(claveGrupo({ ...base, genero: 'Hombre' }), claveGrupo({ ...base, genero: 'Mujer' }))
   assert.equal(nombreArticulo({ ...base, color: 'Negro', genero: 'Mujer' }), 'Playera · Playera coach · Negro · Mujer')
   assert.equal(nombreArticulo({ ...base, nombre: 'Playera coach / Hombre', genero: 'Hombre' }), 'Playera · Playera coach / Hombre', 'no repite el género')
+})
+
+test('costo por gafete en la hoja Gafetes', async () => {
+  const { leerCosto } = await import('../js/admin/importar.js')
+  assert.equal(leerCosto('$35.50'), 35.5)
+  assert.equal(leerCosto(40), 40)
+  assert.equal(leerCosto(''), null)
+  assert.equal(leerCosto('no sé'), null)
+  const g = leerGafete({ 'Nombre del colaborador': 'Ana', Sucursal: 'Iteso', 'Reposición (cantidad de gafetes)': 2, 'Costo por gafete': '$35', 'Costo total': 70 }, { catalogo })
+  assert.equal(g.costo, 35, 'toma Costo por gafete, no Costo total')
+  assert.equal(leerGafete({ Colaborador: 'Luis', Sucursal: 'Iteso', Reposición: 1 }, { catalogo }).costo, null)
+  const { plan } = planearGafetes([{ ...g, nombre: 'Ana' }], { modo: 'total' })
+  assert.deepEqual(expandirPlan(plan).map((r) => r.costo), [35, 35])
 })

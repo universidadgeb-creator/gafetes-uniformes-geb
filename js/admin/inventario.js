@@ -2,6 +2,7 @@
 import { CATEGORIAS, claveGrupo, dinero, fechaCorta, GENEROS, h, isoLocal, llaveColaborador, nombreArticulo, nombreSucursal, normalizar, numero, ordenTalla, RAZONES, unidades } from '../comun.js'
 import {
   actualizarArticulo,
+  actualizarCostos,
   actualizarVarios,
   asegurarArticuloGafete,
   crearArticulos,
@@ -902,7 +903,7 @@ function dialogoConteo(articuloId = '') {
 // ---------- Excel ----------
 
 const COLUMNAS_UNIFORMES = ['Categoría', 'Tipo', 'Modelo / descripción', 'Color', 'Género', 'Para qué rol', 'Área', 'Unidad', 'Talla', 'Costo por pieza', 'Real', 'Deseado', 'Proveedor']
-const COLUMNAS_GAFETES = ['Nombre del colaborador', 'Sucursal', 'Reposición (cantidad de gafetes)', 'Fecha (opcional)']
+const COLUMNAS_GAFETES = ['Nombre del colaborador', 'Sucursal', 'Reposición (cantidad de gafetes)', 'Costo por gafete', 'Fecha (opcional)']
 const filaDe = (columnas, valores) => Object.fromEntries(columnas.map((c, i) => [c, valores[i] ?? '']))
 
 function exportar() {
@@ -942,6 +943,7 @@ function exportar() {
       Reposiciones: x.reposiciones,
       'Primer gafete': fechaCorta(x.primera),
       'Último gafete': fechaCorta(x.ultima),
+      'Costo por gafete': x.total ? Math.round((x.costo / x.total) * 100) / 100 : '',
       'Costo total': x.costo,
     }))
   const detalle = gafetesRegistrados()
@@ -976,8 +978,8 @@ function descargarPlantilla() {
     {
       nombre: 'Gafetes',
       filas: [
-        filaDe(COLUMNAS_GAFETES, ['Ejemplo Ana López', 'Vivo 47 · Valle Real', 1, '']),
-        filaDe(COLUMNAS_GAFETES, ['Ejemplo Luis Pérez', 'EasyFit · ITESO', 3, '20/11/2026']),
+        filaDe(COLUMNAS_GAFETES, ['Ejemplo Ana López', 'Vivo 47 · Valle Real', 1, 35, '']),
+        filaDe(COLUMNAS_GAFETES, ['Ejemplo Luis Pérez', 'EasyFit · ITESO', 3, 35, '20/11/2026']),
       ],
     },
     { nombre: 'Sucursales', filas: estado.opciones.sucursales.map((s) => ({ 'Sucursales (copia el nombre tal cual)': s })) },
@@ -996,7 +998,7 @@ function dialogoImportar() {
     ancho: true,
     cuerpo: `
       <ol style="margin:0;padding-left:20px;display:grid;gap:6px">
-        <li>Descarga la plantilla. Tiene dos hojas: <b>Uniformes</b> (un renglón por talla: color, género, rol, área, costo, real y deseado) y <b>Gafetes</b> (un renglón por colaborador: nombre, sucursal y cantidad de gafetes).</li>
+        <li>Descarga la plantilla. Tiene dos hojas: <b>Uniformes</b> (un renglón por talla: color, género, rol, área, costo, real y deseado) y <b>Gafetes</b> (un renglón por colaborador: nombre, sucursal, cantidad de gafetes y costo por gafete).</li>
         <li>Para completar color, género, rol o área de lo que ya tienes, usa <b>Descargar Excel</b>, llena esas columnas y súbelo aquí (la columna ID dice qué artículo es).</li>
         <li>Los renglones que dicen "Ejemplo" se ignoran. Si un colaborador ya tiene gafetes registrados, solo se agregan los que falten.</li>
       </ol>
@@ -1020,6 +1022,7 @@ function dialogoImportar() {
           <label class="campo"><span>Fecha para renglones sin fecha</span><input id="g-fecha" type="date" value="${isoLocal()}" /><small>Los gafetes que se agreguen de un renglón llevan esa fecha.</small></label>
         </div>
         <label style="display:flex;gap:8px;align-items:center;font-weight:600"><input type="checkbox" id="g-descontar" /> Descontar del inventario de gafetes <span class="tenue" style="font-weight:500">(déjalo sin marcar si ya se entregaron)</span></label>
+        <label id="g-bloque-costo" class="oculto" style="display:flex;gap:8px;align-items:center;font-weight:600"><input type="checkbox" id="g-guardar-costo" checked /> Guardar el costo del Excel como costo por pieza del gafete <span class="tenue" style="font-weight:500">(para entregas y presupuesto futuros)</span></label>
       </div>
       <div id="vista-previa"></div>`,
     pie: '<button class="btn" type="button" data-cerrar>Cancelar</button><button class="btn btn-primario" type="button" id="importar" disabled>Importar</button>',
@@ -1043,6 +1046,7 @@ function dialogoImportar() {
           nuevos: registros.filter((r) => r.motivo === 'nuevo').length,
           reposiciones: registros.filter((r) => r.motivo !== 'nuevo').length,
           sinFecha: plan.filter((p) => p.sinFecha).length,
+          conCosto: registros.filter((x) => x.costo != null).length,
           noReconocidas: new Set(filas.filter((g) => !g.sucursalReconocida && g.sucursal).map((g) => g.sucursal)),
           fechaPorDefecto,
         }
@@ -1061,6 +1065,11 @@ function dialogoImportar() {
               r.alDia ? `; ${r.alDia} colaboradores ya estaban al día` : ''
             }${r.sinFecha ? `; ${r.sinFecha} sin fecha quedan con ${h(fechaCorta(r.fechaPorDefecto))}` : ''}.</div>`,
           )
+          partes.push(
+            r.conCosto
+              ? `<div>Costo: el del Excel en ${r.conCosto} de ${r.registros.length} gafetes${r.conCosto < r.registros.length ? '; los demás usan el costo del gafete' : ''}.</div>`
+              : '<div class="tenue">El Excel no trae costo por gafete: se usa el costo del gafete elegido abajo.</div>',
+          )
           if (r.conMas) partes.push(`<div class="tenue">${r.conMas} colaborador(es) tienen más gafetes registrados que en el archivo; no se borra nada.</div>`)
           if (r.noReconocidas.size) partes.push(`<div class="tenue">Sucursales que no están en tu catálogo (se guardan como vienen): ${[...r.noReconocidas].map(h).join(', ')}.</div>`)
         }
@@ -1068,17 +1077,18 @@ function dialogoImportar() {
         $('#vista-previa').innerHTML = partes.length
           ? `<div class="aviso aviso-info"><div style="display:grid;gap:4px">${partes.join('')}</div></div>${
               muestra.length
-                ? `<div class="tabla-envoltura" style="margin-top:10px"><table><thead><tr><th>Colaborador</th><th>Sucursal</th><th class="num">En el archivo</th><th class="num">Ya registrados</th><th class="num">Se agregan</th><th>Gafete</th></tr></thead><tbody>${muestra
+                ? `<div class="tabla-envoltura" style="margin-top:10px"><table><thead><tr><th>Colaborador</th><th>Sucursal</th><th class="num">En el archivo</th><th class="num">Ya registrados</th><th class="num">Se agregan</th><th class="num">Costo c/u</th><th>Gafete</th></tr></thead><tbody>${muestra
                     .map(
                       (p) => `<tr><td>${h(p.nombre)}</td><td>${h(p.sucursal)}</td><td class="num">${numero(p.total)}</td><td class="num">${numero(p.previos)}</td><td class="num"><b>${numero(
                         p.agregarNuevos + p.agregarReposiciones,
-                      )}</b></td><td>${p.articulo ? h(etiquetaArticulo(p.articulo)) : '<span class="tenue">El elegido arriba</span>'}</td></tr>`,
+                      )}</b></td><td class="num">${p.costo != null ? dinero(p.costo) : '<span class="tenue">del gafete</span>'}</td><td>${p.articulo ? h(etiquetaArticulo(p.articulo)) : '<span class="tenue">El elegido arriba</span>'}</td></tr>`,
                     )
                     .join('')}</tbody></table></div>${r.plan.length > muestra.length ? `<p class="tenue" style="margin-top:6px">…y ${r.plan.length - muestra.length} colaboradores más.</p>` : ''}`
                 : ''
             }`
           : '<div class="aviso aviso-error"><div>No encontré renglones válidos. La hoja de uniformes necesita Categoría y Tipo; la de gafetes, Nombre del colaborador y Sucursal.</div></div>'
         $('#opciones-gafetes').classList.toggle('oculto', !leidos.length)
+        $('#g-bloque-costo').classList.toggle('oculto', !r.conCosto)
         $('#importar').disabled = !articulos.length && !r.registros.length
       }
       $('#archivo').onchange = async (e) => {
@@ -1107,7 +1117,7 @@ function dialogoImportar() {
         if (e.target.name === 'g-modo') pintar()
       })
       $('#importar').onclick = async () => {
-        if (resultado.registros.length && !tipos.length && $('#g-costo').value === '') {
+        if (resultado.registros.length && !tipos.length && $('#g-costo').value === '' && !resultado.conCosto) {
           toast('Escribe el costo por gafete', true)
           $('#g-costo').focus()
           return
@@ -1120,8 +1130,14 @@ function dialogoImportar() {
             hecho.push(`${r.creados} artículos nuevos y ${r.actualizados} actualizados`)
           }
           if (resultado.registros.length) {
-            const articulo = await asegurarArticuloGafete({ articuloId: $('#g-art')?.value, tipo: $('#g-tipo')?.value, costo: $('#g-costo')?.value })
+            const costoExcel = resultado.registros.find((x) => x.costo != null)?.costo
+            const articulo = await asegurarArticuloGafete({ articuloId: $('#g-art')?.value, tipo: $('#g-tipo')?.value, costo: $('#g-costo')?.value || costoExcel || 0 })
             await registrarGafetes(resultado.registros, { articulo, descontar: $('#g-descontar').checked, nota: 'Importado de Excel' })
+            if (resultado.conCosto && $('#g-guardar-costo').checked) {
+              const costos = new Map()
+              for (const x of resultado.registros) if (x.costo != null) costos.set((x.articulo ?? articulo).id, x.costo)
+              await actualizarCostos(costos)
+            }
             hecho.push(`${resultado.registros.length} gafetes registrados`)
           }
           toast(`Importado: ${hecho.join(' · ')}`)

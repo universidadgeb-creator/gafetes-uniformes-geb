@@ -36,7 +36,7 @@ Sistema de Capital Humano para controlar el inventario de **gafetes y uniformes*
 ## Plantilla de importación
 
 - **Uniformes:** Categoría, Tipo, Modelo / descripción, Color, Género, Para qué rol, Área, Unidad, Talla, Costo por pieza, Real, Deseado, Proveedor (un renglón por talla). Para completar color, género, rol o área de lo que ya existe: *Descargar Excel*, llenar y volver a subir (la columna ID identifica cada artículo).
-- **Gafetes:** Nombre del colaborador, Sucursal, Reposición (cantidad de gafetes), Fecha (opcional). Al importar se elige si la cantidad es el total (incluye el primer gafete) o solo reposiciones. Si el colaborador ya tiene gafetes, solo se agregan los que falten, así que volver a subir el archivo no duplica. La sucursal puede venir corta ("Valle Real", "GTM", "ITESO").
+- **Gafetes:** Nombre del colaborador, Sucursal, Reposición (cantidad de gafetes), Costo por gafete, Fecha (opcional). Si el costo viene vacío se usa el del gafete; al importar se puede guardar el costo del Excel como costo por pieza del gafete. Al importar se elige si la cantidad es el total (incluye el primer gafete) o solo reposiciones. Si el colaborador ya tiene gafetes, solo se agregan los que falten, así que volver a subir el archivo no duplica. La sucursal puede venir corta ("Valle Real", "GTM", "ITESO").
 - Las hojas *Sucursales* y *Roles* son de consulta. Los renglones que dicen "Ejemplo" se ignoran.
 
 ## Acceso de administrador

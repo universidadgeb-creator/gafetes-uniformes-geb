@@ -147,6 +147,16 @@ export function leerCantidad(valor) {
   return { cantidad: null, siNo: r.reposicion, texto: r.texto }
 }
 
+// Columna con el costo de cada gafete ("Costo por gafete", "Precio", "Costo"…). No toma "Costo total".
+const columnaCosto = (k) =>
+  ['costoporgafete', 'costodelgafete', 'preciogafete', 'preciodelgafete', 'preciopogafete', 'precioporgafete', 'costo', 'precio', 'costounitario', 'preciounitario', 'costoporpieza'].includes(k)
+
+export function leerCosto(valor) {
+  if (valor == null || texto(valor) === '') return null
+  const n = Number(String(valor).replace(/[$,\s]/g, ''))
+  return Number.isFinite(n) && n >= 0 ? n : null
+}
+
 export function leerGafete(fila, { catalogo = [], fechaPorDefecto } = {}) {
   if (esEjemplo(fila)) return null
   const v = normalizarFila(fila)
@@ -162,6 +172,7 @@ export function leerGafete(fila, { catalogo = [], fechaPorDefecto } = {}) {
     sucursalReconocida: reconocida,
     cantidad: c.cantidad,
     siNo: c.siNo,
+    costo: leerCosto(buscar(v, columnaCosto)),
     razon,
     detalle,
     fecha: fecha ?? fechaPorDefecto,
@@ -205,7 +216,7 @@ export function planearGafetes(filas, { modo = 'total', existentes = new Map() }
 export function expandirPlan(plan) {
   const registros = []
   for (const p of plan) {
-    const base = { nombre: p.nombre, sucursal: p.sucursal, fecha: p.fecha, articulo: p.articulo ?? null }
+    const base = { nombre: p.nombre, sucursal: p.sucursal, fecha: p.fecha, articulo: p.articulo ?? null, costo: p.costo ?? null }
     for (let i = 0; i < p.agregarNuevos; i++) registros.push({ ...base, motivo: 'nuevo', razon: null, detalle: null })
     for (let i = 0; i < p.agregarReposiciones; i++) registros.push({ ...base, motivo: 'reposicion', razon: p.razon, detalle: p.detalle })
   }

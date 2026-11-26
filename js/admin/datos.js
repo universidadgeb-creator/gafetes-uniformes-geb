@@ -133,6 +133,14 @@ export async function importarArticulos(filas) {
   return { creados, actualizados }
 }
 
+// Guarda el costo por pieza de varios artículos (Map id → costo).
+export async function actualizarCostos(costos) {
+  if (!costos.size) return
+  const lote = writeBatch(db)
+  for (const [id, costo] of costos) lote.update(doc(db, 'articulos', id), { costo, actualizadoEn: serverTimestamp() })
+  await lote.commit()
+}
+
 // Deja una sola versión de cada uniforme repetido. planes: resultado de planearUnion (importar.js).
 export async function unirDuplicados(planes) {
   const operaciones = []
@@ -238,7 +246,7 @@ export async function registrarGafetes(registros, { articulo, descontar = false,
   for (let i = 0; i < registros.length; i += 200) {
     const lote = writeBatch(db)
     for (const r of registros.slice(i, i + 200)) {
-      agregarMovimientos(lote, 'salida', [{ articulo: r.articulo ?? articulo, cantidad: 1, sinInventario: !descontar }], {
+      agregarMovimientos(lote, 'salida', [{ articulo: r.articulo ?? articulo, cantidad: 1, sinInventario: !descontar, costoUnitario: r.costo ?? null }], {
         fecha: r.fecha,
         motivo: r.motivo,
         razon: r.motivo === 'reposicion' ? r.razon : null,
