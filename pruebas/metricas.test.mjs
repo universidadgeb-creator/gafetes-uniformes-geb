@@ -135,3 +135,21 @@ test('presupuesto con historial corto usa los meses reales', () => {
   assert.ok(p.mesesBase < 1.1)
   assert.ok(p.filas[0].consumoMes > 2.5)
 })
+
+test('gafetes por colaborador: total, reposiciones y costo', async () => {
+  const { gafetesPorColaborador } = await import('../js/admin/metricas.js')
+  const g = (colaborador, sucursal, motivo, fecha) => ({ tipo: 'salida', categoria: 'gafete', cantidad: 1, costoUnitario: 35, colaborador, sucursal, motivo, fecha })
+  const r = gafetesPorColaborador([
+    g('Ana López', 'Vivo 47 · Valle Real', 'nuevo', '2026-01-10'),
+    g('ana lopez', 'Vivo 47 · Valle Real', 'reposicion', '2026-06-01'),
+    g('Ana López', 'Vivo 47 · Valle Real', 'reposicion', '2026-11-01'),
+    g('Luis', 'EasyFit · ITESO', 'nuevo', '2026-11-02'),
+    { tipo: 'salida', categoria: 'uniforme', cantidad: 1, costoUnitario: 200, colaborador: 'Luis', sucursal: 'EasyFit · ITESO', motivo: 'nuevo', fecha: '2026-11-02' },
+  ])
+  const ana = r.find((x) => x.nombre === 'Ana López')
+  assert.equal(r.length, 2)
+  assert.equal(ana.total, 3)
+  assert.equal(ana.reposiciones, 2)
+  assert.equal(ana.costo, 105)
+  assert.equal(ana.ultima.getMonth(), 10)
+})

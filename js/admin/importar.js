@@ -1,6 +1,6 @@
 // Lectura de la plantilla de Excel: hoja de artículos (uniformes por talla) y hoja de gafetes
 // por colaborador (nombre, sucursal, reposición sí/no). Funciones puras: se prueban en Node.
-import { claveGrupo, normalizar } from '../comun.js'
+import { claveGrupo, llaveColaborador, normalizar } from '../comun.js'
 
 const claveColumna = (k) => normalizar(k).replace(/[^a-z0-9]/g, '')
 const texto = (v) => String(v ?? '').trim()
@@ -32,6 +32,17 @@ export function tipoHoja(filas) {
 
 // ---------- Uniformes / artículos ----------
 
+// "Hombre", "H", "Dama", "Unisex"… → Hombre | Mujer | Unisex | ''
+export function leerGenero(valor) {
+  const s = normalizar(valor)
+  if (!s) return ''
+  if (s === 'h' || /^(hombre|caballero|masculino|varon)/.test(s)) return 'Hombre'
+  if (s === 'm' || /^(mujer|dama|femenino)/.test(s)) return 'Mujer'
+  if (s === 'u' || /^(unisex|ambos|mixto)/.test(s)) return 'Unisex'
+  return ''
+}
+
+
 export function leerArticulo(fila) {
   if (esEjemplo(fila)) return null
   const v = normalizarFila(fila)
@@ -43,7 +54,11 @@ export function leerArticulo(fila) {
   return {
     categoria,
     tipo,
-    nombre: texto(v.modelocolor ?? v.modelo ?? v.nombre),
+    id: texto(buscar(v, (k) => k === 'id' || k.startsWith('idno'))) || null,
+    nombre: texto(v.modelodescripcion ?? v.modelocolor ?? v.modelo ?? v.nombre),
+    color: texto(v.color),
+    genero: leerGenero(v.genero ?? v.sexo),
+    rol: texto(v.paraquerol ?? v.rol ?? v.roles ?? v.puesto).replace(/\s*,\s*/g, ', ').replace(/,\s*$/, ''),
     unidad: !unidad || normalizar(unidad).startsWith('toda') ? 'Todas' : unidad,
     talla: texto(v.talla) || null,
     costo: numeroDe(v.costoporpieza ?? v.costo),
@@ -118,21 +133,34 @@ export function leerFecha(v) {
   return null
 }
 
+// Columna con la cantidad de gafetes del colaborador ("Reposición", "Cantidad", "Gafetes"…).
+const columnaCantidad = (k) =>
+  k.startsWith('reposicion') || k === 'esreposicion' || k.startsWith('cantidad') || k === 'gafetes' || k.startsWith('numerodegafetes') || k.startsWith('nodegafetes') || k.startsWith('totaldegafetes')
+
+// Número → cantidad. Si viene "Sí"/"No" (formato anterior) se respeta como reposición sí/no.
+export function leerCantidad(valor) {
+  if (typeof valor === 'number' && Number.isFinite(valor)) return { cantidad: Math.max(0, Math.round(valor)), siNo: null, texto: '' }
+  const s = texto(valor)
+  if (/^\d+([.,]0+)?$/.test(s)) return { cantidad: Math.max(0, Math.round(Number(s.replace(',', '.')))), siNo: null, texto: '' }
+  const r = leerReposicion(s)
+  return { cantidad: null, siNo: r.reposicion, texto: r.texto }
+}
+
 export function leerGafete(fila, { catalogo = [], fechaPorDefecto } = {}) {
   if (esEjemplo(fila)) return null
   const v = normalizarFila(fila)
   const nombre = texto(buscar(v, columnaNombre)).replace(/\s+/g, ' ')
   if (nombre.length < 2) return null
   const { sucursal, reconocida } = emparejarSucursal(v.sucursal, catalogo)
-  const rep = leerReposicion(buscar(v, (k) => k.startsWith('reposicion') || k === 'esreposicion'))
-  const textoRazon = texto(buscar(v, (k) => k.startsWith('razon') || k.startsWith('motivo'))) || rep.texto
-  const { razon, detalle } = rep.reposicion ? razonDesdeTexto(textoRazon) : { razon: null, detalle: null }
+  const c = leerCantidad(buscar(v, columnaCantidad))
+  const { razon, detalle } = razonDesdeTexto(texto(buscar(v, (k) => k.startsWith('razon') || k.startsWith('motivo'))) || c.texto)
   const fecha = leerFecha(buscar(v, (k) => k.startsWith('fecha')))
   return {
     nombre,
     sucursal,
     sucursalReconocida: reconocida,
-    motivo: rep.reposicion ? 'reposicion' : 'nuevo',
+    cantidad: c.cantidad,
+    siNo: c.siNo,
     razon,
     detalle,
     fecha: fecha ?? fechaPorDefecto,
@@ -140,7 +168,47 @@ export function leerGafete(fila, { catalogo = [], fechaPorDefecto } = {}) {
   }
 }
 
-// Llave para no registrar dos veces el mismo gafete al volver a importar un archivo.
-export const llaveGafete = (g) => [normalizar(g.nombre ?? g.colaborador), normalizar(g.sucursal), g.motivo, g.fecha].join('|')
+// Cuántos gafetes debe tener el colaborador según el renglón.
+// modo 'total': la cantidad incluye el primer gafete · modo 'reposiciones': la cantidad es solo de reposiciones.
+export function objetivoGafetes(g, modo = 'total') {
+  if (g.cantidad == null) return { nuevos: 1, reposiciones: g.siNo ? 1 : 0 }
+  if (modo === 'reposiciones') return { nuevos: 1, reposiciones: g.cantidad }
+  return { nuevos: g.cantidad > 0 ? 1 : 0, reposiciones: Math.max(0, g.cantidad - 1) }
+}
 
-export { claveGrupo }
+// Compara el archivo con lo ya registrado (Map llave → { nuevos, reposiciones }) y devuelve solo lo que falta,
+// así volver a subir el mismo archivo (o uno con cantidades nuevas) no duplica gafetes.
+export function planearGafetes(filas, { modo = 'total', existentes = new Map() } = {}) {
+  const ya = new Map([...existentes].map(([k, v]) => [k, { ...v }]))
+  const plan = []
+  let alDia = 0
+  let conMas = 0
+  for (const g of filas) {
+    const k = llaveColaborador(g.nombre, g.sucursal)
+    const tiene = ya.get(k) ?? { nuevos: 0, reposiciones: 0 }
+    const meta = objetivoGafetes(g, modo)
+    const agregarNuevos = Math.max(0, meta.nuevos - tiene.nuevos)
+    const agregarReposiciones = Math.max(0, meta.reposiciones - tiene.reposiciones)
+    if (!agregarNuevos && !agregarReposiciones) {
+      alDia++
+      if (tiene.nuevos + tiene.reposiciones > meta.nuevos + meta.reposiciones) conMas++
+      continue
+    }
+    plan.push({ ...g, total: meta.nuevos + meta.reposiciones, previos: tiene.nuevos + tiene.reposiciones, agregarNuevos, agregarReposiciones })
+    ya.set(k, { nuevos: Math.max(tiene.nuevos, meta.nuevos), reposiciones: Math.max(tiene.reposiciones, meta.reposiciones) })
+  }
+  return { plan, alDia, conMas }
+}
+
+// Un registro por gafete (lo que guarda registrarGafetes).
+export function expandirPlan(plan) {
+  const registros = []
+  for (const p of plan) {
+    const base = { nombre: p.nombre, sucursal: p.sucursal, fecha: p.fecha, articulo: p.articulo ?? null }
+    for (let i = 0; i < p.agregarNuevos; i++) registros.push({ ...base, motivo: 'nuevo', razon: null, detalle: null })
+    for (let i = 0; i < p.agregarReposiciones; i++) registros.push({ ...base, motivo: 'reposicion', razon: p.razon, detalle: p.detalle })
+  }
+  return registros
+}
+
+export { claveGrupo, llaveColaborador }

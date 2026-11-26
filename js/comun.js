@@ -281,15 +281,27 @@ export function ordenTalla(t) {
   return Number.isFinite(n) ? 100 + n : 500
 }
 
+export const GENEROS = ['Hombre', 'Mujer', 'Unisex']
+
+// "Playera · Playera coach · Negro · Hombre" (sin repetir lo que ya dice el modelo).
 export function nombreArticulo(a) {
   if (!a) return ''
-  const partes = [a.tipo, a.nombre && a.nombre !== a.tipo ? a.nombre : null].filter(Boolean)
-  return partes.join(' · ')
+  const partes = [a.tipo]
+  if (a.nombre && a.nombre !== a.tipo) partes.push(a.nombre)
+  for (const extra of [a.color, a.genero]) {
+    if (extra && !normalizar(partes.join(' ')).includes(normalizar(extra))) partes.push(extra)
+  }
+  return partes.filter(Boolean).join(' · ')
 }
 
+// Identifica un artículo sin la talla. Color y género solo cuentan si existen (las claves viejas no cambian).
 export function claveGrupo(a) {
-  return slug(`${a.categoria}|${a.tipo}|${a.nombre ?? ''}|${a.unidad ?? 'Todas'}`)
+  const extra = [a.color, a.genero].filter(Boolean).join('|')
+  return slug(`${a.categoria}|${a.tipo}|${a.nombre ?? ''}|${a.unidad ?? 'Todas'}${extra ? `|${extra}` : ''}`)
 }
+
+// Mismo colaborador = mismo nombre (sin acentos ni mayúsculas) en la misma sucursal.
+export const llaveColaborador = (nombre, sucursal) => `${normalizar(nombre).replace(/\s+/g, ' ')}|${normalizar(sucursal)}`
 
 export function textoRazon(p) {
   if (p.tipoSolicitud !== 'reposicion' && p.motivo !== 'reposicion') return ''

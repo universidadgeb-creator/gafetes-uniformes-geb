@@ -39,6 +39,9 @@ export async function crearArticulos(base, variantes) {
       real: Math.round(limpiarNumero(v.real)),
       deseado: Math.round(limpiarNumero(v.deseado)),
       proveedor: base.proveedor || null,
+      color: base.color || null,
+      genero: base.genero || null,
+      rol: base.rol || null,
       activo: true,
       creadoEn: serverTimestamp(),
       actualizadoEn: serverTimestamp(),
@@ -70,9 +73,13 @@ export async function eliminarArticulo(id) {
   await deleteDoc(doc(db, 'articulos', id))
 }
 
-// Importación desde Excel: crea los nuevos y actualiza (costo, deseado, real) los existentes.
+// Importación desde Excel. Busca cada renglón por ID (Excel descargado del sistema), luego por
+// tipo/modelo/color/género/unidad/talla y, para artículos que no tenían color ni género, por la clave sin ellos.
 export async function importarArticulos(filas) {
+  const porId = new Map(estado.articulos.map((a) => [a.id, a]))
   const porClave = new Map(estado.articulos.map((a) => [`${a.grupo}|${a.talla ?? ''}`, a]))
+  const sinExtras = (a) => claveGrupo({ ...a, color: null, genero: null })
+  const porClaveBase = new Map(estado.articulos.filter((a) => !a.color && !a.genero).map((a) => [`${sinExtras(a)}|${a.talla ?? ''}`, a]))
   let creados = 0
   let actualizados = 0
   for (let i = 0; i < filas.length; i += 400) {
@@ -84,11 +91,19 @@ export async function importarArticulos(filas) {
         nombre: f.nombre || '',
         unidad: f.unidad || 'Todas',
         talla: f.talla || null,
+        color: f.color || null,
+        genero: f.genero || null,
+        rol: f.rol || null,
       }
       a.grupo = claveGrupo(a)
-      const existente = porClave.get(`${a.grupo}|${a.talla ?? ''}`)
+      const porSuId = f.id ? porId.get(f.id) : null
+      const existente = porSuId ?? porClave.get(`${a.grupo}|${a.talla ?? ''}`) ?? porClaveBase.get(`${sinExtras(a)}|${a.talla ?? ''}`)
       if (existente) {
+        // Con ID se respeta todo lo del archivo; sin ID solo se llenan color, género y rol si vienen.
+        const datos = porSuId ? a : { ...a, color: a.color ?? existente.color ?? null, genero: a.genero ?? existente.genero ?? null, rol: a.rol ?? existente.rol ?? null }
+        datos.grupo = claveGrupo(datos)
         lote.update(doc(db, 'articulos', existente.id), {
+          ...datos,
           costo: f.costo,
           deseado: f.deseado,
           real: f.real,
@@ -96,9 +111,11 @@ export async function importarArticulos(filas) {
           activo: true,
           actualizadoEn: serverTimestamp(),
         })
+        porClave.set(`${datos.grupo}|${datos.talla ?? ''}`, existente)
         actualizados++
       } else {
-        lote.set(doc(collection(db, 'articulos')), {
+        const ref = doc(collection(db, 'articulos'))
+        lote.set(ref, {
           ...a,
           costo: f.costo,
           real: f.real,
@@ -108,6 +125,7 @@ export async function importarArticulos(filas) {
           creadoEn: serverTimestamp(),
           actualizadoEn: serverTimestamp(),
         })
+        porClave.set(`${a.grupo}|${a.talla ?? ''}`, { id: ref.id, ...a })
         creados++
       }
     }
@@ -276,6 +294,9 @@ export function gruposDesdeArticulos(articulos) {
       tipo: a.tipo,
       nombre: a.nombre || '',
       unidad: a.unidad || 'Todas',
+      color: a.color || null,
+      genero: a.genero || null,
+      rol: a.rol || null,
       tallas: [],
     }
     if (a.talla && !g.tallas.includes(a.talla)) g.tallas.push(a.talla)

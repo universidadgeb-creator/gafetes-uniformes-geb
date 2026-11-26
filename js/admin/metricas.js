@@ -1,6 +1,6 @@
 // Cálculos del panel: inventario, entregas, rotación, tiempos de tickets y presupuesto.
 // Funciones puras (sin Firebase ni DOM) para poder probarlas en Node: npm run probar
-import { ABIERTOS, aFecha, CERRADOS, normalizar } from '../comun.js'
+import { ABIERTOS, aFecha, CERRADOS, llaveColaborador, normalizar } from '../comun.js'
 
 export const HORA_MS = 36e5
 export const DIA_MS = 864e5
@@ -367,4 +367,29 @@ export function proyeccion(articulos, movimientos, { mesesBase = 6, horizonte = 
       ? { ingresosMes, costo: ingresosMes * kitNuevoIngreso * horizonte, diferencia: ingresosMes * kitNuevoIngreso * horizonte - totales.proyNuevoCosto }
       : null
   return { mesesBase: meses, desde, filas, totales, kitNuevoIngreso, nuevosPorMes, escenario }
+}
+
+// ---------- Gafetes por colaborador ----------
+
+// Porta gafetes, cordones y similares no cuentan como gafete del colaborador.
+export const esAccesorioGafete = (m) => /porta|cord[oó]n|lanyard|yoyo|clip|funda/i.test(`${m.tipoArticulo ?? ""} ${m.articuloNombre ?? ""}`)
+
+// Un renglón por colaborador y sucursal con su cantidad de gafetes (nuevo ingreso + reposiciones).
+export function gafetesPorColaborador(movimientos) {
+  const mapa = new Map()
+  for (const m of movimientos) {
+    if (m.tipo !== 'salida' || m.categoria !== 'gafete' || esAccesorioGafete(m)) continue
+    const k = llaveColaborador(m.colaborador ?? '', m.sucursal ?? '')
+    const x = mapa.get(k) ?? { nombre: m.colaborador || 'Sin nombre', sucursal: m.sucursal ?? '', nuevos: 0, reposiciones: 0, total: 0, costo: 0, primera: null, ultima: null }
+    const n = Number(m.cantidad) || 1
+    if (m.motivo === 'nuevo') x.nuevos += n
+    else x.reposiciones += n
+    x.total += n
+    x.costo += totalMovimiento(m)
+    const f = fechaMovimiento(m)
+    if (f && (!x.primera || f < x.primera)) x.primera = f
+    if (f && (!x.ultima || f > x.ultima)) x.ultima = f
+    mapa.set(k, x)
+  }
+  return [...mapa.values()]
 }

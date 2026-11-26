@@ -21,6 +21,7 @@ import {
   h,
   isoLocal,
   MOTIVOS,
+  nombreArticulo,
   nombreSucursal,
   normalizar,
   nuevoFolio,
@@ -98,14 +99,19 @@ function gruposDisponibles(sucursal) {
   return grupos
 }
 
-const etiquetaGrupo = (g) => [g.tipo, g.nombre && g.nombre !== g.tipo ? g.nombre : null].filter(Boolean).join(' · ')
+// Tipo · modelo · color · género
+const etiquetaGrupo = (g) => nombreArticulo(g)
 
-function htmlArticulos(sucursal) {
+// Los artículos marcados para el rol del colaborador salen primero.
+function htmlArticulos(sucursal, rol = '') {
   const grupos = gruposDisponibles(sucursal)
   if (!grupos.length) return '<p class="muted">Todavía no hay artículos configurados para tu unidad. Escribe lo que necesitas en comentarios.</p>'
+  const miRol = normalizar(rol)
+  const esMio = (g) =>
+    Boolean(miRol && g.rol && normalizar(g.rol).split(/\s*,\s*/).some((r) => r && (miRol.includes(r) || r.includes(miRol))))
   let html = ''
   for (const cat of ['gafete', 'uniforme']) {
-    const deCat = grupos.filter((g) => g.categoria === cat)
+    const deCat = grupos.filter((g) => g.categoria === cat).sort((a, b) => Number(esMio(b)) - Number(esMio(a)))
     if (!deCat.length) continue
     html += `<p class="grupo-titulo">${cat === 'gafete' ? 'Gafete' : 'Uniforme'}</p>`
     for (const g of deCat) {
@@ -114,7 +120,10 @@ function htmlArticulos(sucursal) {
         <div class="articulo-pedido">
           <label class="articulo-check">
             <input type="checkbox" name="art" value="${h(g.id)}" />
-            <span class="nombre">${h(etiquetaGrupo(g))}</span>
+            <span class="nombre">${h(etiquetaGrupo(g))}${
+              g.rol && !esMio(g) ? `<br><span class="tenue" style="font-weight:500">Para: ${h(g.rol)}</span>` : ''
+            }</span>
+            ${esMio(g) ? '<span class="badge sin-punto tono-ok">Para tu rol</span>' : ''}
             ${g.unidad && g.unidad !== 'Todas' ? `<span class="tenue">${h(g.unidad)}</span>` : ''}
           </label>
           <div class="extra">
@@ -208,7 +217,7 @@ function mostrarFormulario() {
 
       <div class="tarjeta">
         <div class="tarjeta-titulo"><h2><span class="seccion-num">3</span>¿Qué necesitas?</h2><p>Marca uno o varios</p></div>
-        <div class="lista-articulos" id="articulos">${htmlArticulos(datos.sucursal)}</div>
+        <div class="lista-articulos" id="articulos">${htmlArticulos(datos.sucursal, datos.rol)}</div>
         <label class="campo" style="margin-top:16px"><span>Comentarios (opcional)</span>
           <textarea name="comentarios" maxlength="600" rows="2" placeholder="Algo más que debamos saber"></textarea></label>
       </div>
@@ -230,10 +239,13 @@ function mostrarFormulario() {
         form.razon.value === 'otra' ? 'Cuéntanos qué pasó <em>*</em>' : 'Cuéntanos más (opcional)'
     }
     if (n === 'quien') document.getElementById('bloque-solicitante').classList.toggle('oculto', form.quien.value !== 'otro')
-    if (n === 'sucursal') {
+    if (n === 'sucursal' || n === 'rol') {
+      // Se vuelve a pintar la lista conservando lo que ya marcó (artículo, talla y cantidad).
       const marcados = new Set([...form.querySelectorAll('input[name="art"]:checked')].map((i) => i.value))
-      document.getElementById('articulos').innerHTML = htmlArticulos(form.sucursal.value)
+      const valores = Object.fromEntries([...form.querySelectorAll('#articulos select')].map((s) => [s.name, s.value]))
+      document.getElementById('articulos').innerHTML = htmlArticulos(form.sucursal.value, form.rol.value)
       for (const i of form.querySelectorAll('input[name="art"]')) i.checked = marcados.has(i.value)
+      for (const s of form.querySelectorAll('#articulos select')) if (valores[s.name]) s.value = valores[s.name]
     }
     e.target.classList.remove('invalido')
   })
