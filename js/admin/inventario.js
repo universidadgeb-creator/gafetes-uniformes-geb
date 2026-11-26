@@ -10,9 +10,23 @@ import {
   limpiarNumero,
   registrarGafetes,
   registrarMovimientos,
+  unirDuplicados,
 } from './datos.js'
 import { articuloPorId, estado } from './estado.js'
-import { emparejarSucursal, expandirPlan, leerArticulo, leerGafete, planearGafetes, tipoHoja } from './importar.js'
+import {
+  baseModelo,
+  buscarDuplicados,
+  emparejarArticulos,
+  emparejarSucursal,
+  expandirPlan,
+  generoArticulo,
+  leerArticulo,
+  leerGafete,
+  planearGafetes,
+  planearUnion,
+  tipoHoja,
+  versionSugerida,
+} from './importar.js'
 import { estadoStock, fechaMovimiento, gafetesPorColaborador, resumenInventario, totalMovimiento } from './metricas.js'
 import {
   abrirDialogo,
@@ -97,6 +111,7 @@ export function montar(el) {
       if (a === 'conteo') dialogoConteo(id)
       if (a === 'importar') dialogoImportar()
       if (a === 'excel') exportar()
+      if (a === 'duplicados') dialogoDuplicados()
       if (a === 'gafete') dialogoGafete({ nombre: b.dataset.nombre, sucursal: b.dataset.sucursal })
       return
     }
@@ -163,6 +178,7 @@ export function actualizar() {
     </tr>`
   }
   c.innerHTML = `
+    ${avisoDuplicados()}
     <div class="kpis">
       <div class="kpi destacado"><div class="etq">Costo del inventario (real)</div><div class="valor">${dinero(res.valor)}</div><div class="sub">${numero(res.piezas)} piezas</div></div>
       <div class="kpi"><div class="etq">Inventario deseado</div><div class="valor">${dinero(res.valorDeseado)}</div><div class="sub">${numero(res.deseadoPiezas)} piezas</div></div>
@@ -395,6 +411,106 @@ const leerExtra = (dlg) => ({
   area: dlg.querySelector('#area').value || null,
   rol: dlg.querySelector('#rol').value.trim().replace(/\s*,\s*/g, ', ').replace(/,\s*$/, '') || null,
 })
+
+// ---------- Unir duplicados ----------
+
+function dialogoDuplicados() {
+  const duplicados = buscarDuplicados(estado.articulos)
+  if (!duplicados.length) {
+    toast('No hay uniformes repetidos')
+    return
+  }
+  const movimientosDe = (id) => estado.movimientos.filter((m) => m.articuloId === id).length
+  const tallas = (v) =>
+    [...v.articulos]
+      .sort((a, b) => ordenTalla(a.talla) - ordenTalla(b.talla))
+      .map((a) => `${a.talla ?? 'Sin talla'}: ${numero(a.real)}/${numero(a.deseado)}`)
+      .join(' · ')
+  const tarjeta = (d, i) => {
+    const sugerida = versionSugerida(d)
+    const a0 = d.versiones[0].articulos[0]
+    const titulo = [a0.tipo, baseModelo(a0.nombre), generoArticulo(a0)].filter(Boolean).join(' · ')
+    return `
+      <div class="tarjeta" style="box-shadow:none;padding:14px" data-dup="${i}">
+        <label style="display:flex;gap:8px;align-items:center;font-weight:800"><input type="checkbox" data-unir checked /> ${h(titulo)} <span class="tenue" style="font-weight:600">${d.versiones.length} versiones</span></label>
+        <div style="display:grid;gap:8px;margin-top:10px">
+          ${d.versiones
+            .map((v) => {
+              const a = v.articulos[0]
+              const detalles = [a.color && `Color: ${a.color}`, a.genero && `Género: ${a.genero}`, `Unidad: ${a.unidad || 'Todas'}`, a.area && `Área: ${a.area}`, a.rol && `Para: ${a.rol}`]
+                .filter(Boolean)
+                .join(' · ')
+              const entregas = v.articulos.reduce((s, x) => s + movimientosDe(x.id), 0)
+              return `<label class="opcion"><input type="radio" name="dup-${i}" value="${h(v.grupo)}" ${v.grupo === sugerida ? 'checked' : ''} />
+                <span><b>${h(nombreArticulo(a))}</b><small>${h(detalles)}</small><small>Real/deseado por talla → ${h(tallas(v))}${entregas ? ` · ${entregas} movimiento(s)` : ''}</small></span></label>`
+            })
+            .join('')}
+        </div>
+      </div>`
+  }
+  abrirDialogo({
+    titulo: 'Unir uniformes duplicados',
+    subtitulo: `${duplicados.length} uniforme(s) están dados de alta en más de una versión.`,
+    ancho: true,
+    cuerpo: `
+      <div class="aviso aviso-info"><div>Elige qué versión se queda (ya está marcada la que tiene más datos). Las demás se borran y sus entregas pasan a la elegida. Si otra versión tiene una talla que la elegida no tiene, esa talla se pasa a la elegida. Quita la palomita a lo que no sea realmente el mismo uniforme.</div></div>
+      <label style="display:flex;gap:8px;align-items:flex-start;font-weight:600"><input type="checkbox" id="sumar-real" style="margin-top:4px" />
+        <span>Sumar el inventario real de las versiones que se borran<br><span class="tenue" style="font-weight:500">Márcalo solo si son piezas distintas. Si fue la misma carga repetida, déjalo sin marcar y se queda el real de la versión elegida.</span></span></label>
+      ${duplicados.map(tarjeta).join('')}`,
+    pie: '<button class="btn" type="button" data-cerrar>Cancelar</button><button class="btn btn-primario" type="button" id="unir">Unir</button>',
+    alMontar: (dlg) => {
+      const $ = (s) => dlg.querySelector(s)
+      const planes = () => {
+        const sumarReal = $('#sumar-real').checked
+        return duplicados
+          .map((d, i) => {
+            const caja = dlg.querySelector(`[data-dup="${i}"]`)
+            if (!caja.querySelector('[data-unir]').checked) return null
+            return planearUnion(d, caja.querySelector(`input[name="dup-${i}"]:checked`).value, { sumarReal })
+          })
+          .filter(Boolean)
+      }
+      const actualizarBoton = () => {
+        const n = planes().length
+        $('#unir').textContent = n ? `Unir ${n} uniforme${n === 1 ? '' : 's'}` : 'Unir'
+        $('#unir').disabled = !n
+      }
+      dlg.addEventListener('change', actualizarBoton)
+      actualizarBoton()
+      $('#unir').onclick = async () => {
+        const lista = planes()
+        const borrar = lista.reduce((s, p) => s + p.borrar.length, 0)
+        const pasar = lista.reduce((s, p) => s + p.adoptar.length, 0)
+        const ok = await confirmar(`¿Unir ${lista.length} uniforme(s)?`, {
+          aceptar: 'Unir',
+          peligro: true,
+          detalle: `Se borran ${borrar} artículo(s) repetidos${pasar ? ` y ${pasar} talla(s) se pasan a la versión elegida` : ''}. Las entregas registradas no se pierden. No se puede deshacer.`,
+        })
+        if (!ok) return
+        $('#unir').disabled = true
+        try {
+          const r = await unirDuplicados(lista)
+          toast(`Listo: ${r.borrados} repetidos borrados${r.movidos ? `, ${r.movidos} movimientos reasignados` : ''}`)
+          dlg.cerrar()
+        } catch (err) {
+          console.error(err)
+          toast('No se pudo terminar de unir. Revisa y vuelve a intentar.', true)
+          $('#unir').disabled = false
+        }
+      }
+    },
+  })
+}
+
+function avisoDuplicados() {
+  const n = buscarDuplicados(estado.articulos).length
+  return n
+    ? `<div class="aviso aviso-alerta" style="margin-bottom:16px;align-items:center;justify-content:space-between;flex-wrap:wrap">
+        <div><b>Hay ${n} uniforme(s) dados de alta en varias versiones.</b>Salen repetidos en el formulario y pueden inflar los totales.</div>
+        <button class="btn btn-chico" type="button" data-accion="duplicados">Unir duplicados</button>
+      </div>`
+    : ''
+}
 
 // ---------- Nuevo artículo ----------
 
@@ -936,11 +1052,7 @@ function dialogoImportar() {
         const r = resultado
         const partes = []
         if (articulos.length) {
-          const porId = new Set(estado.articulos.map((a) => a.id))
-          const existentes = new Set(estado.articulos.map((a) => `${a.grupo}|${a.talla ?? ''}`))
-          const sinExtras = (a) => `${claveGrupo({ ...a, color: null, genero: null })}|${a.talla ?? ''}`
-          const base = new Set(estado.articulos.filter((a) => !a.color && !a.genero).map(sinExtras))
-          const actualizan = articulos.filter((f) => (f.id && porId.has(f.id)) || existentes.has(`${claveGrupo(f)}|${f.talla ?? ''}`) || base.has(sinExtras(f))).length
+          const actualizan = emparejarArticulos(articulos, estado.articulos).filter((r) => r.existente?.id).length
           partes.push(`<div><b>Uniformes y artículos:</b> ${articulos.length} renglón(es): ${articulos.length - actualizan} nuevos y ${actualizan} se actualizan.</div>`)
         }
         if (leidos.length) {

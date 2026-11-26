@@ -15,6 +15,7 @@ import {
   writeBatch,
 } from '../firebase.js'
 import { articuloPorId, estado } from './estado.js'
+import { emparejarArticulos } from './importar.js'
 
 const limpiarNumero = (v) => {
   const n = Number(String(v ?? '').replace(/[$,\s]/g, ''))
@@ -74,18 +75,16 @@ export async function eliminarArticulo(id) {
   await deleteDoc(doc(db, 'articulos', id))
 }
 
-// Importación desde Excel. Busca cada renglón por ID (Excel descargado del sistema), luego por
-// tipo/modelo/color/género/unidad/talla y, para artículos que no tenían color ni género, por la clave sin ellos.
+// Importación desde Excel (ver emparejarArticulos en importar.js para cómo se reconoce cada renglón).
 export async function importarArticulos(filas) {
-  const porId = new Map(estado.articulos.map((a) => [a.id, a]))
-  const porClave = new Map(estado.articulos.map((a) => [`${a.grupo}|${a.talla ?? ''}`, a]))
-  const sinExtras = (a) => claveGrupo({ ...a, color: null, genero: null })
-  const porClaveBase = new Map(estado.articulos.filter((a) => !a.color && !a.genero).map((a) => [`${sinExtras(a)}|${a.talla ?? ''}`, a]))
+  const pares = emparejarArticulos(filas, estado.articulos)
+  const refs = pares.map((p) => (p.existente ? null : doc(collection(db, 'articulos'))))
   let creados = 0
   let actualizados = 0
-  for (let i = 0; i < filas.length; i += 400) {
+  for (let i = 0; i < pares.length; i += 400) {
     const lote = writeBatch(db)
-    for (const f of filas.slice(i, i + 400)) {
+    pares.slice(i, i + 400).forEach(({ fila: f, existente, porSuId }, j) => {
+      const k = i + j
       const a = {
         categoria: f.categoria,
         tipo: f.tipo,
@@ -98,26 +97,8 @@ export async function importarArticulos(filas) {
         area: f.area || null,
       }
       a.grupo = claveGrupo(a)
-      const porSuId = f.id ? porId.get(f.id) : null
-      const existente = porSuId ?? porClave.get(`${a.grupo}|${a.talla ?? ''}`) ?? porClaveBase.get(`${sinExtras(a)}|${a.talla ?? ''}`)
-      if (existente) {
-        // Con ID se respeta todo lo del archivo; sin ID solo se llenan color, género y rol si vienen.
-        const datos = porSuId ? a : { ...a, color: a.color ?? existente.color ?? null, genero: a.genero ?? existente.genero ?? null, rol: a.rol ?? existente.rol ?? null, area: a.area ?? existente.area ?? null }
-        datos.grupo = claveGrupo(datos)
-        lote.update(doc(db, 'articulos', existente.id), {
-          ...datos,
-          costo: f.costo,
-          deseado: f.deseado,
-          real: f.real,
-          ...(f.proveedor ? { proveedor: f.proveedor } : {}),
-          activo: true,
-          actualizadoEn: serverTimestamp(),
-        })
-        porClave.set(`${datos.grupo}|${datos.talla ?? ''}`, existente)
-        actualizados++
-      } else {
-        const ref = doc(collection(db, 'articulos'))
-        lote.set(ref, {
+      if (!existente) {
+        lote.set(refs[k], {
           ...a,
           costo: f.costo,
           real: f.real,
@@ -127,13 +108,54 @@ export async function importarArticulos(filas) {
           creadoEn: serverTimestamp(),
           actualizadoEn: serverTimestamp(),
         })
-        porClave.set(`${a.grupo}|${a.talla ?? ''}`, { id: ref.id, ...a })
         creados++
+        return
       }
-    }
+      // Con ID se respeta todo lo del archivo; sin ID, color, género, rol y área vacíos no borran lo que ya había.
+      const datos = porSuId
+        ? a
+        : { ...a, color: a.color ?? existente.color ?? null, genero: a.genero ?? existente.genero ?? null, rol: a.rol ?? existente.rol ?? null, area: a.area ?? existente.area ?? null }
+      datos.grupo = claveGrupo(datos)
+      const id = existente.id ?? refs[existente.nuevo].id
+      lote.update(doc(db, 'articulos', id), {
+        ...datos,
+        costo: f.costo,
+        deseado: f.deseado,
+        real: f.real,
+        ...(f.proveedor ? { proveedor: f.proveedor } : {}),
+        activo: true,
+        actualizadoEn: serverTimestamp(),
+      })
+      if (existente.id) actualizados++
+    })
     await lote.commit()
   }
   return { creados, actualizados }
+}
+
+// Deja una sola versión de cada uniforme repetido. planes: resultado de planearUnion (importar.js).
+export async function unirDuplicados(planes) {
+  const operaciones = []
+  let borrados = 0
+  let movidos = 0
+  for (const p of planes) {
+    for (const x of p.adoptar) operaciones.push((lote) => lote.update(doc(db, 'articulos', x.id), { ...x.datos, activo: true, actualizadoEn: serverTimestamp() }))
+    for (const s of p.sumar) operaciones.push((lote) => lote.update(doc(db, 'articulos', s.id), { real: increment(s.cantidad), actualizadoEn: serverTimestamp() }))
+    for (const b of p.borrar) {
+      for (const m of estado.movimientos.filter((x) => x.articuloId === b.id)) {
+        operaciones.push((lote) => lote.update(doc(db, 'movimientos', m.id), { articuloId: b.destino, articuloNombre: p.nombre }))
+        movidos++
+      }
+      operaciones.push((lote) => lote.delete(doc(db, 'articulos', b.id)))
+      borrados++
+    }
+  }
+  for (let i = 0; i < operaciones.length; i += 400) {
+    const lote = writeBatch(db)
+    for (const op of operaciones.slice(i, i + 400)) op(lote)
+    await lote.commit()
+  }
+  return { borrados, movidos, adoptados: planes.reduce((s, p) => s + p.adoptar.length, 0) }
 }
 
 // ---------- Movimientos ----------

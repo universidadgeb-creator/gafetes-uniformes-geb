@@ -1,6 +1,6 @@
 // Lectura de la plantilla de Excel: hoja de artículos (uniformes por talla) y hoja de gafetes
 // por colaborador (nombre, sucursal, reposición sí/no). Funciones puras: se prueban en Node.
-import { claveGrupo, llaveColaborador, normalizar } from '../comun.js'
+import { claveGrupo, llaveColaborador, nombreArticulo, normalizar } from '../comun.js'
 
 const claveColumna = (k) => normalizar(k).replace(/[^a-z0-9]/g, '')
 const texto = (v) => String(v ?? '').trim()
@@ -210,6 +210,118 @@ export function expandirPlan(plan) {
     for (let i = 0; i < p.agregarReposiciones; i++) registros.push({ ...base, motivo: 'reposicion', razon: p.razon, detalle: p.detalle })
   }
   return registros
+}
+
+// ---------- Misma prenda en varias versiones ----------
+
+// "Playera coach / Hombre" → "Playera coach"
+const GENERO_AL_FINAL = /\s*[/(–-]\s*(hombre|mujer|unisex|caballero|dama)\s*\)?\s*$/i
+export const baseModelo = (nombre) => texto(nombre).replace(GENERO_AL_FINAL, '').trim()
+
+export function generoArticulo(a) {
+  if (a.genero) return a.genero
+  const m = normalizar(a.nombre).match(/\b(hombre|mujer|unisex|caballero|dama)\b/)
+  return m ? leerGenero(m[1]) : ''
+}
+
+// Misma prenda: categoría + tipo + modelo (sin el género pegado al nombre) + género. No cuenta color ni unidad.
+export const claveFamilia = (a) => [a.categoria, normalizar(a.tipo), normalizar(baseModelo(a.nombre)), generoArticulo(a)].join('|')
+
+// ¿Puede el renglón nuevo ser el mismo artículo que el existente? (no choca en color ni en unidad)
+export function compatible(existente, nuevo) {
+  const color = !existente.color || !nuevo.color || normalizar(existente.color) === normalizar(nuevo.color)
+  const u1 = existente.unidad || 'Todas'
+  const u2 = nuevo.unidad || 'Todas'
+  return color && (u1 === 'Todas' || u2 === 'Todas' || u1 === u2)
+}
+
+// Uniformes activos que existen en más de una versión (grupo).
+export function buscarDuplicados(articulos) {
+  const familias = new Map()
+  for (const a of articulos) {
+    if (a.categoria !== 'uniforme' || a.activo === false) continue
+    const k = claveFamilia(a)
+    const f = familias.get(k) ?? new Map()
+    const g = a.grupo ?? claveGrupo(a)
+    f.set(g, [...(f.get(g) ?? []), a])
+    familias.set(k, f)
+  }
+  return [...familias]
+    .filter(([, f]) => f.size > 1)
+    .map(([clave, f]) => ({ clave, versiones: [...f].map(([grupo, lista]) => ({ grupo, articulos: lista })) }))
+}
+
+// Versión con más datos llenos (color, género, rol, área, unidad); en empate, la más reciente.
+export function versionSugerida(duplicado) {
+  const puntos = (v) => {
+    const a = v.articulos[0]
+    return [a.color, a.genero, a.rol, a.area, a.unidad && a.unidad !== 'Todas' ? a.unidad : null].filter(Boolean).length
+  }
+  const fecha = (v) => Math.max(0, ...v.articulos.map((a) => a.creadoEn?.toMillis?.() ?? 0))
+  return [...duplicado.versiones].sort((x, y) => puntos(y) - puntos(x) || fecha(y) - fecha(x))[0].grupo
+}
+
+// Qué hacer para dejar una sola versión: las tallas repetidas se borran (sus entregas pasan a la elegida)
+// y las tallas que la elegida no tiene se pasan a ella.
+export function planearUnion(duplicado, grupoElegido, { sumarReal = false } = {}) {
+  const elegida = duplicado.versiones.find((v) => v.grupo === grupoElegido) ?? duplicado.versiones[0]
+  const base = elegida.articulos[0]
+  const datos = {
+    tipo: base.tipo,
+    nombre: base.nombre ?? '',
+    color: base.color ?? null,
+    genero: base.genero ?? null,
+    unidad: base.unidad ?? 'Todas',
+    rol: base.rol ?? null,
+    area: base.area ?? null,
+    grupo: elegida.grupo,
+  }
+  const porTalla = new Map(elegida.articulos.map((a) => [String(a.talla ?? ''), a]))
+  const plan = { nombre: nombreArticulo(datos), adoptar: [], borrar: [], sumar: [] }
+  for (const v of duplicado.versiones) {
+    if (v === elegida) continue
+    for (const a of v.articulos) {
+      const talla = String(a.talla ?? '')
+      const destino = porTalla.get(talla)
+      if (destino) {
+        plan.borrar.push({ id: a.id, destino: destino.id, talla: a.talla ?? null })
+        if (sumarReal && Number(a.real)) plan.sumar.push({ id: destino.id, cantidad: Number(a.real) })
+      } else {
+        plan.adoptar.push({ id: a.id, datos })
+        porTalla.set(talla, a)
+      }
+    }
+  }
+  return plan
+}
+
+// Empareja renglones del Excel con artículos existentes: por ID, por clave exacta, por clave sin color/género
+// y por "misma prenda" (familia) si no choca en color ni unidad. Un artículo no se empareja dos veces por
+// parecido. Los renglones nuevos repetidos apuntan al primero (existente.nuevo = índice).
+export function emparejarArticulos(filas, existentes) {
+  const porId = new Map(existentes.map((a) => [a.id, a]))
+  const clave = (a) => `${a.grupo ?? claveGrupo(a)}|${a.talla ?? ''}`
+  const sinExtras = (a) => `${claveGrupo({ ...a, color: null, genero: null })}|${a.talla ?? ''}`
+  const familia = (a) => `${claveFamilia(a)}|${a.talla ?? ''}`
+  const porClave = new Map(existentes.map((a) => [clave(a), a]))
+  const porBase = new Map(existentes.filter((a) => !a.color && !a.genero).map((a) => [sinExtras(a), a]))
+  const porFamilia = new Map()
+  for (const a of existentes) porFamilia.set(familia(a), [...(porFamilia.get(familia(a)) ?? []), a])
+  const usados = new Set()
+  return filas.map((f, i) => {
+    const fila = { ...f, grupo: claveGrupo(f) }
+    let existente = f.id ? porId.get(f.id) ?? null : null
+    const porSuId = Boolean(existente)
+    existente ??= porClave.get(clave(fila)) ?? null
+    if (!existente) {
+      const b = porBase.get(sinExtras(fila))
+      if (b && !usados.has(b.id)) existente = b
+    }
+    if (!existente) existente = (porFamilia.get(familia(fila)) ?? []).find((x) => !usados.has(x.id) && compatible(x, fila)) ?? null
+    if (existente?.id) usados.add(existente.id)
+    if (!existente) porClave.set(clave(fila), { ...fila, id: null, nuevo: i })
+    return { fila, existente, porSuId }
+  })
 }
 
 export { claveGrupo, llaveColaborador }
