@@ -18,6 +18,7 @@ Sistema de Capital Humano para controlar el inventario de **gafetes y uniformes*
 - **Resumen:** valor del inventario, costo para llegar al deseado, gasto entregado, **costo de rotación** (nuevos ingresos) y por persona, costo de reposiciones, pedidos abiertos y fuera de tiempo, **tiempo promedio de resolución**, mediana, % a tiempo y tiempo de primera atención. Gráficas por mes, por razón, por sucursal, gafetes vs. uniformes y antigüedad de pedidos.
 - **Pedidos:** bandeja de tickets con semáforo de tiempo. Al entregar, el sistema propone qué artículo y talla descontar, registra el costo y cierra el ticket.
 - **Inventario:** cada artículo (tipo, modelo/color, unidad de negocio, talla) con **real, deseado, diferencia, costo por pieza, costo del inventario y costo del faltante**. Alta de artículos con varias tallas, compras, conteo físico, importación y descarga en Excel.
+- **Gafetes por colaborador:** cada gafete se registra con **sucursal, si es reposición y nombre del colaborador** (alta manual o desde la hoja *Gafetes* de la plantilla). Si hay un gafete dado de alta por sucursal (columna *Unidad*), se usa el de su sucursal; se puede descontar o no del inventario.
 - **Entregas y movimientos:** bitácora de entregas (a quién, sucursal, rol, área, nuevo ingreso o reposición, razón, quién lo pidió, costo), compras y ajustes. Registro directo de entregas (por ejemplo, el kit de inducción) y anulación con reversa de inventario.
 - **Presupuesto:** compra sugerida por artículo y costo total para 1, 3, 6 o 12 meses, con base en el consumo real de los últimos 3, 6 o 12 meses. Separa rotación y reposición y permite simular cuántos ingresos esperas al mes.
 - **Ajustes:** link para colaboradores, tiempo objetivo de respuesta, catálogos (sucursales, áreas, roles, tipos de gafete y uniforme, tallas) y accesos de admin.
@@ -28,6 +29,12 @@ Sistema de Capital Humano para controlar el inventario de **gafetes y uniformes*
 - **Rotación** = costo de lo entregado por *nuevo ingreso*. **Kit por persona** = ese costo ÷ personas nuevas distintas.
 - **Tiempo de resolución** = desde que llega el pedido hasta que se marca *Entregado* o *No procede*. **Primera atención** = hasta el primer cambio de estado.
 - **Compra sugerida** = deseado − real + consumo mensual × meses a presupuestar (mínimo 0).
+
+## Plantilla de importación
+
+- **Uniformes:** Categoría, Tipo, Modelo / color, Unidad, Talla, Costo por pieza, Real, Deseado, Proveedor (un renglón por talla).
+- **Gafetes:** Nombre del colaborador, Sucursal, Reposición (Sí/No), Razón (si es reposición), Fecha (opcional). La sucursal puede venir corta ("Valle Real", "GTM", "ITESO").
+- Las hojas *Sucursales* y *Razones* son de consulta. Los renglones que dicen "Ejemplo" se ignoran y los gafetes repetidos no se duplican.
 
 ## Acceso de administrador
 

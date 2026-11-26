@@ -1,6 +1,6 @@
 // Escrituras del panel en Firestore. Cada cambio de inventario se hace en un lote (batch)
 // que guarda el movimiento y ajusta el "real" del artículo al mismo tiempo.
-import { claveGrupo, isoLocal, nombreArticulo } from '../comun.js'
+import { claveGrupo, isoLocal, nombreArticulo, OPCIONES_BASE, SUCURSALES_PRIMERA_VERSION } from '../comun.js'
 import {
   arrayUnion,
   collection,
@@ -26,6 +26,7 @@ export { limpiarNumero }
 
 export async function crearArticulos(base, variantes) {
   const lote = writeBatch(db)
+  const creados = []
   for (const v of variantes) {
     const ref = doc(collection(db, 'articulos'))
     const a = {
@@ -44,8 +45,10 @@ export async function crearArticulos(base, variantes) {
     }
     a.grupo = claveGrupo(a)
     lote.set(ref, a)
+    creados.push({ id: ref.id, ...a })
   }
   await lote.commit()
+  return creados
 }
 
 export async function actualizarArticulo(id, cambios) {
@@ -130,11 +133,12 @@ function datosArticulo(a) {
 // tipo: 'entrada' (suma), 'salida' (resta), 'ajuste' (cantidad con signo).
 function agregarMovimientos(lote, tipo, lineas, comunes) {
   for (const l of lineas) {
-    const a = articuloPorId(l.articuloId)
+    const a = l.articulo ?? articuloPorId(l.articuloId)
     if (!a) continue
     const cantidad = tipo === 'ajuste' ? Math.round(l.cantidad) : Math.abs(Math.round(l.cantidad))
     if (!cantidad) continue
-    const delta = tipo === 'entrada' ? cantidad : tipo === 'salida' ? -cantidad : cantidad
+    // sinInventario: se registra la entrega y su costo, pero no se descuenta del "real" (p. ej. gafetes históricos).
+    const delta = l.sinInventario ? 0 : tipo === 'entrada' ? cantidad : tipo === 'salida' ? -cantidad : cantidad
     const costoUnitario = l.costoUnitario != null ? limpiarNumero(l.costoUnitario) : Number(a.costo) || 0
     lote.set(doc(collection(db, 'movimientos')), {
       tipo,
@@ -148,6 +152,7 @@ function agregarMovimientos(lote, tipo, lineas, comunes) {
       creadoEn: serverTimestamp(),
       ...limpiarComunes(comunes),
     })
+    if (l.sinInventario) continue
     const cambios = { real: increment(delta), actualizadoEn: serverTimestamp() }
     if (tipo === 'entrada' && l.actualizarCosto) cambios.costo = costoUnitario
     lote.update(doc(db, 'articulos', a.id), cambios)
@@ -170,10 +175,40 @@ export async function registrarMovimientos(tipo, lineas, comunes = {}) {
 export async function anularMovimiento(m) {
   const lote = writeBatch(db)
   lote.delete(doc(db, 'movimientos', m.id))
-  if (articuloPorId(m.articuloId)) {
+  if (Number(m.delta) && articuloPorId(m.articuloId)) {
     lote.update(doc(db, 'articulos', m.articuloId), { real: increment(-(Number(m.delta) || 0)), actualizadoEn: serverTimestamp() })
   }
   await lote.commit()
+}
+
+// ---------- Gafetes por colaborador ----------
+
+// Devuelve el artículo de gafete elegido o crea uno nuevo (tipo + costo) si todavía no hay.
+export async function asegurarArticuloGafete({ articuloId, tipo, costo }) {
+  const existente = articuloId && articuloPorId(articuloId)
+  if (existente) return existente
+  const [creado] = await crearArticulos({ categoria: 'gafete', tipo: tipo || 'Gafete PVC impreso', nombre: '', unidad: 'Todas', costo }, [{ talla: null, real: 0, deseado: 0 }])
+  return creado
+}
+
+// registros: [{ nombre, sucursal, motivo, razon, detalle, fecha }]. Un gafete = una entrega de 1 pieza.
+export async function registrarGafetes(registros, { articulo, descontar = false, nota = '' } = {}) {
+  for (let i = 0; i < registros.length; i += 200) {
+    const lote = writeBatch(db)
+    for (const r of registros.slice(i, i + 200)) {
+      agregarMovimientos(lote, 'salida', [{ articulo: r.articulo ?? articulo, cantidad: 1, sinInventario: !descontar }], {
+        fecha: r.fecha,
+        motivo: r.motivo,
+        razon: r.motivo === 'reposicion' ? r.razon : null,
+        detalleRazon: r.motivo === 'reposicion' ? r.detalle : null,
+        colaborador: r.nombre,
+        sucursal: r.sucursal,
+        solicitadoPor: r.solicitadoPor || r.nombre,
+        nota: r.nota || nota,
+      })
+    }
+    await lote.commit()
+  }
 }
 
 // ---------- Pedidos ----------
@@ -257,8 +292,14 @@ export async function guardarOpciones(cambios) {
 
 let ultimaFirma = null
 // Mantiene publico/opciones.grupos al día con el inventario (lo que puede pedir el colaborador).
+let sucursalesMigradas = false
 export async function sincronizarGrupos() {
   if (!estado.cargado.articulos || !estado.cargado.opciones) return
+  // Si el catálogo de sucursales sigue siendo el de la primera versión (sin cambios), se cambia por el oficial.
+  if (!sucursalesMigradas && estado.opcionesGuardadas && JSON.stringify(estado.opciones.sucursales) === JSON.stringify(SUCURSALES_PRIMERA_VERSION)) {
+    sucursalesMigradas = true
+    await guardarOpciones({ sucursales: OPCIONES_BASE.sucursales })
+  }
   const grupos = gruposDesdeArticulos(estado.articulos)
   const firma = JSON.stringify(grupos)
   if (firma === JSON.stringify(estado.opciones.grupos ?? []) && estado.opcionesGuardadas) return

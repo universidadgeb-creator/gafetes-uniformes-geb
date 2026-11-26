@@ -22,9 +22,7 @@ export const RAZONES = {
 export const CATEGORIAS = { gafete: 'Gafete', uniforme: 'Uniforme' }
 export const TIPOS_MOVIMIENTO = { entrada: 'Entrada (compra)', salida: 'Entrega', ajuste: 'Ajuste de conteo' }
 
-// Valores iniciales. Se editan en Ajustes y se guardan en publico/opciones.
-export const OPCIONES_BASE = {
-  sucursales: [
+export const SUCURSALES_PRIMERA_VERSION = [
     'Vivo 47 · Naciones Unidas',
     'Vivo 47 · Valle Real',
     'Vivo 47 · Gourmetería',
@@ -43,6 +41,24 @@ export const OPCIONES_BASE = {
     'Nuevos Negocios · Onara VR',
     'Nuevos Negocios · Seven Nutrition',
     'Nuevos Negocios · White Mouse',
+  ]
+
+// Valores iniciales. Se editan en Ajustes y se guardan en publico/opciones.
+export const OPCIONES_BASE = {
+  sucursales: [
+    'Vivo 47 · Naciones Unidas',
+    'Vivo 47 · Valle Real',
+    'Vivo 47 · Gourmetería',
+    'Vivo 47 · La Estancia',
+    'Vivo 47 · Oficina Central',
+    'EasyFit · ITESO',
+    'EasyFit · Ávila Camacho',
+    'EasyFit · Cañadas',
+    'EasyFit · Aleira',
+    'EasyFit · Oficina Central',
+    'GEB · Estructura y Soporte',
+    'GEB · Capital Humano',
+    'GEB · Marketing',
   ],
   areas: [
     'Acuática',

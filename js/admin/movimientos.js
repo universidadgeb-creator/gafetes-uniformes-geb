@@ -77,7 +77,7 @@ export function montar(el) {
     const ok = await confirmar('¿Anular este movimiento?', {
       aceptar: 'Anular',
       peligro: true,
-      detalle: `Se borra el registro y se revierte el inventario (${m.delta > 0 ? 'se restan' : 'se suman'} ${Math.abs(m.delta)} pieza(s) de ${h(m.articuloNombre)}${m.talla ? ` talla ${h(m.talla)}` : ''}).${m.pedidoId ? ' El pedido seguirá marcado como entregado.' : ''}`,
+      detalle: !Number(m.delta) ? `Se borra el registro de ${h(m.articuloNombre)}${m.colaborador ? ` de ${h(m.colaborador)}` : ''}. No cambia el inventario (no se había descontado).` : `Se borra el registro y se revierte el inventario (${m.delta > 0 ? 'se restan' : 'se suman'} ${Math.abs(m.delta)} pieza(s) de ${h(m.articuloNombre)}${m.talla ? ` talla ${h(m.talla)}` : ''}).${m.pedidoId ? ' El pedido seguirá marcado como entregado.' : ''}`,
     })
     if (!ok) return
     try {
@@ -147,7 +147,7 @@ export function actualizar() {
           <td style="white-space:nowrap">${h(fechaCorta(fechaMovimiento(m)))}</td>
           <td>${h(TIPOS_MOVIMIENTO[m.tipo] ?? m.tipo)}</td>
           <td>${h(m.articuloNombre)}${m.talla ? ` <span class="tenue">· ${h(m.talla)}</span>` : ''}</td>
-          <td class="num ${m.delta < 0 ? 'negativo' : 'positivo'}">${m.delta > 0 ? '+' : ''}${numero(m.delta)}</td>
+          <td class="num ${m.tipo === 'salida' || m.delta < 0 ? 'negativo' : 'positivo'}">${m.tipo === 'salida' ? `-${numero(m.cantidad)}${Number(m.delta) ? '' : '<br><span class="tenue">sin descontar</span>'}` : `${m.delta > 0 ? '+' : ''}${numero(m.delta)}`}</td>
           <td class="num">${dinero(m.costoUnitario)}</td>
           <td class="num">${dinero(totalMovimiento(m))}</td>
           <td>${textoMotivo(m)}</td>
@@ -299,7 +299,8 @@ function exportar() {
       Artículo: m.articuloNombre,
       'Unidad del artículo': m.unidadArticulo ?? '',
       Talla: m.talla ?? '',
-      Piezas: m.delta,
+      Piezas: m.tipo === 'salida' ? -m.cantidad : m.delta,
+      'Descontó inventario': m.tipo === 'salida' ? (Number(m.delta) ? 'Sí' : 'No') : '',
       'Costo por pieza': m.costoUnitario,
       Total: totalMovimiento(m),
       Motivo: m.tipo === 'salida' ? MOTIVOS[m.motivo] ?? '' : '',

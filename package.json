@@ -10,7 +10,7 @@
   "scripts": {
     "emuladores": "node scripts/emuladores.mjs",
     "sembrar": "node scripts/sembrar.mjs",
-    "probar": "node --test pruebas/metricas.test.mjs",
+    "probar": "node --test pruebas/metricas.test.mjs pruebas/importar.test.mjs",
     "probar-reglas": "node scripts/emuladores.mjs --exec \"node --test pruebas/reglas.test.mjs\"",
     "nueva-clave": "node scripts/nueva-clave.mjs",
     "deploy:reglas": "firebase deploy --only firestore:rules,auth"

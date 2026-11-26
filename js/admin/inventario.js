@@ -1,16 +1,19 @@
 // Pestaña Inventario: real vs. deseado, costo por pieza, costo del inventario y del faltante.
-import { CATEGORIAS, claveGrupo, dinero, h, isoLocal, nombreArticulo, normalizar, numero, ordenTalla, unidades } from '../comun.js'
+import { CATEGORIAS, claveGrupo, dinero, fechaCorta, h, isoLocal, nombreArticulo, nombreSucursal, normalizar, numero, ordenTalla, RAZONES, unidades } from '../comun.js'
 import {
   actualizarArticulo,
   actualizarVarios,
+  asegurarArticuloGafete,
   crearArticulos,
   eliminarArticulo,
   importarArticulos,
   limpiarNumero,
+  registrarGafetes,
   registrarMovimientos,
 } from './datos.js'
 import { articuloPorId, estado } from './estado.js'
-import { estadoStock, resumenInventario } from './metricas.js'
+import { emparejarSucursal, leerArticulo, leerGafete, llaveGafete, tipoHoja } from './importar.js'
+import { estadoStock, fechaMovimiento, resumenInventario, totalMovimiento } from './metricas.js'
 import {
   abrirDialogo,
   cargarXLSX,
@@ -20,12 +23,16 @@ import {
   etiquetaArticulo,
   fechaArchivo,
   opcionesArticulos,
+  opcionesLista,
+  opcionesSucursales,
   ordenarArticulos,
   toast,
 } from './ui.js'
 
 let raiz = null
 const filtros = { categoria: '', unidad: '', texto: '', resurtir: false, inactivos: false }
+const filtrosGafete = { sucursal: '' }
+let ultimoGafete = { sucursal: '', fecha: isoLocal() }
 
 export function montar(el) {
   raiz = el
@@ -47,7 +54,7 @@ export function montar(el) {
           .join('')}
       </div>
       <label class="campo"><span class="sr">Unidad</span><select id="f-unidad"></select></label>
-      <label class="campo"><span class="sr">Buscar</span><input type="search" id="f-texto" placeholder="Buscar tipo, modelo, talla…" value="${h(filtros.texto)}" /></label>
+      <label class="campo"><span class="sr">Buscar</span><input type="search" id="f-texto" placeholder="Buscar artículo, talla o colaborador…" value="${h(filtros.texto)}" /></label>
       <label style="display:flex;gap:6px;align-items:center;font-weight:600;font-size:.9rem"><input type="checkbox" id="f-resurtir" ${filtros.resurtir ? 'checked' : ''} /> Solo por resurtir</label>
       <label style="display:flex;gap:6px;align-items:center;font-weight:600;font-size:.9rem"><input type="checkbox" id="f-inactivos" ${filtros.inactivos ? 'checked' : ''} /> Ver inactivos</label>
     </div>
@@ -75,6 +82,11 @@ export function montar(el) {
     filtros.inactivos = e.target.checked
     actualizar()
   })
+  el.addEventListener('change', (e) => {
+    if (e.target.id !== 'gaf-sucursal') return
+    filtrosGafete.sucursal = e.target.value
+    actualizar()
+  })
   el.addEventListener('click', (e) => {
     const b = e.target.closest('[data-accion]')
     if (b) {
@@ -85,6 +97,7 @@ export function montar(el) {
       if (a === 'conteo') dialogoConteo(id)
       if (a === 'importar') dialogoImportar()
       if (a === 'excel') exportar()
+      if (a === 'gafete') dialogoGafete()
       return
     }
     const fila = e.target.closest('tr[data-art]')
@@ -118,7 +131,7 @@ export function actualizar() {
   const c = raiz.querySelector('#contenido')
   if (!estado.articulos.length) {
     c.innerHTML = `<div class="tarjeta vacio"><b>Tu inventario está vacío</b>Da de alta tus gafetes y uniformes con <b>+ Nuevo artículo</b>, o súbelos todos de una vez con <b>Importar Excel</b>.
-      <div class="acciones" style="justify-content:center;margin-top:16px"><button class="btn btn-primario" type="button" data-accion="nuevo">+ Nuevo artículo</button><button class="btn" type="button" data-accion="importar">Importar Excel</button></div></div>`
+      <div class="acciones" style="justify-content:center;margin-top:16px"><button class="btn btn-primario" type="button" data-accion="nuevo">+ Nuevo artículo</button><button class="btn" type="button" data-accion="gafete">+ Registrar gafete</button><button class="btn" type="button" data-accion="importar">Importar Excel</button></div></div>`
     return
   }
   const res = resumenInventario(lista)
@@ -164,8 +177,174 @@ export function actualizar() {
       <tfoot><tr><td>Total (${lista.length})</td><td class="num">${numero(res.piezas)}</td><td class="num">${numero(res.deseadoPiezas)}</td><td class="num">${numero(res.piezas - res.deseadoPiezas)}</td><td></td><td class="num">${dinero(res.valor)}</td><td class="num">${dinero(res.faltanteCosto)}</td><td colspan="2"></td></tr></tfoot>
     </table></div><p class="tenue" style="margin-top:8px">Toca un renglón para editar costo, deseado o datos del artículo.</p>`
         : '<div class="tarjeta vacio"><b>Nada con estos filtros</b>Prueba con otra categoría o búsqueda.</div>'
-    }`
+    }
+    ${filtros.categoria === 'uniforme' ? '' : htmlRegistroGafetes()}`
 }
+
+// ---------- Gafetes por colaborador ----------
+
+const gafetesRegistrados = () => estado.movimientos.filter((m) => m.tipo === 'salida' && m.categoria === 'gafete')
+const tiposGafete = () => ordenarArticulos(estado.articulos.filter((a) => a.categoria === 'gafete' && a.activo !== false))
+const gafetePorDefecto = (tipos) =>
+  tipos.find((a) => (a.unidad || 'Todas') === 'Todas' && /gafete/i.test(a.tipo)) ?? tipos.find((a) => /gafete/i.test(a.tipo)) ?? tipos[0]
+
+// Si diste de alta un gafete por sucursal o por unidad (columna Unidad), se usa el que le toca.
+function gafeteDeSucursal(sucursal, tipos) {
+  if (!sucursal) return null
+  return tipos.find((a) => a.unidad && a.unidad !== 'Todas' && emparejarSucursal(a.unidad, [sucursal]).reconocida) ?? null
+}
+const opcionesGafete = (tipos, seleccionado) =>
+  tipos
+    .map((a) => `<option value="${h(a.id)}" ${a.id === seleccionado?.id ? 'selected' : ''}>${h(etiquetaArticulo(a))} · ${dinero(a.costo)} · ${numero(a.real)} en stock</option>`)
+    .join('')
+
+function htmlRegistroGafetes() {
+  const t = normalizar(filtros.texto)
+  const todos = gafetesRegistrados()
+  const lista = todos
+    .filter((m) => !filtrosGafete.sucursal || m.sucursal === filtrosGafete.sucursal)
+    .filter((m) => !t || normalizar(`${m.colaborador ?? ''} ${m.sucursal ?? ''} ${m.articuloNombre ?? ''}`).includes(t))
+    .sort((a, b) => (fechaMovimiento(b) ?? 0) - (fechaMovimiento(a) ?? 0))
+  const nuevos = lista.filter((m) => m.motivo === 'nuevo').length
+  const costo = lista.reduce((s, m) => s + totalMovimiento(m), 0)
+  const sucursales = [...new Set([...estado.opciones.sucursales, ...todos.map((m) => m.sucursal).filter(Boolean)])]
+  const mostrar = lista.slice(0, 300)
+  return `
+    <div class="tarjeta" style="margin-top:16px">
+      <div class="tarjeta-titulo">
+        <div><h3>Gafetes por colaborador</h3><p>Cada gafete: sucursal, si fue reposición y nombre del colaborador</p></div>
+        <div class="acciones">
+          <select id="gaf-sucursal" aria-label="Sucursal" style="width:auto"><option value="">Todas las sucursales</option>${sucursales
+            .map((s) => `<option value="${h(s)}" ${s === filtrosGafete.sucursal ? 'selected' : ''}>${h(nombreSucursal(s))}</option>`)
+            .join('')}</select>
+          <button class="btn btn-primario" type="button" data-accion="gafete">+ Registrar gafete</button>
+        </div>
+      </div>
+      <p class="muted" style="margin-bottom:12px"><b>${numero(lista.length)}</b> gafetes · ${numero(nuevos)} de nuevo ingreso · ${numero(lista.length - nuevos)} reposiciones · ${dinero(costo)}</p>
+      ${
+        mostrar.length
+          ? `<div class="tabla-envoltura"><table>
+        <thead><tr><th>Fecha</th><th>Colaborador</th><th>Sucursal</th><th>Reposición</th><th>Razón</th><th class="num">Costo</th><th>Inventario</th></tr></thead>
+        <tbody>${mostrar
+          .map(
+            (m) => `<tr>
+            <td style="white-space:nowrap">${h(fechaCorta(fechaMovimiento(m)))}</td>
+            <td><b>${h(m.colaborador ?? '—')}</b>${m.pedidoId ? `<br><span class="tenue">Pedido ${h(m.pedidoId)}</span>` : ''}</td>
+            <td>${h(m.sucursal ? nombreSucursal(m.sucursal) : '—')}</td>
+            <td>${m.motivo === 'nuevo' ? '<span class="badge sin-punto tono-info">No · nuevo ingreso</span>' : '<span class="badge sin-punto tono-oro">Sí</span>'}</td>
+            <td>${m.motivo === 'nuevo' ? '' : h(RAZONES[m.razon] ?? '')}${m.detalleRazon ? `<br><span class="tenue">${h(m.detalleRazon)}</span>` : ''}</td>
+            <td class="num">${dinero(totalMovimiento(m))}</td>
+            <td>${Number(m.delta) ? 'Descontado' : '<span class="tenue">Sin descontar</span>'}</td>
+          </tr>`,
+          )
+          .join('')}</tbody>
+      </table></div>${lista.length > mostrar.length ? `<p class="tenue" style="margin-top:8px">Se muestran 300 de ${lista.length}. Descarga el Excel para verlos todos.</p>` : ''}`
+          : '<p class="muted">Aún no hay gafetes registrados. Regístralos uno por uno o súbelos con <b>Importar Excel</b> (hoja "Gafetes").</p>'
+      }
+    </div>`
+}
+
+function dialogoGafete() {
+  const tipos = tiposGafete()
+  const inicial = gafeteDeSucursal(ultimoGafete.sucursal, tipos) ?? gafetePorDefecto(tipos)
+  abrirDialogo({
+    titulo: 'Registrar gafete',
+    subtitulo: 'Sucursal, si es reposición y nombre del colaborador.',
+    cuerpo: `
+      <div class="rejilla">
+        <label class="campo" style="grid-column:1/-1"><span>Nombre del colaborador <em>*</em></span><input id="g-nombre" maxlength="120" autocomplete="off" /></label>
+        <label class="campo"><span>Sucursal <em>*</em></span><select id="g-sucursal">${opcionesSucursales(ultimoGafete.sucursal)}</select></label>
+        <label class="campo"><span>Fecha</span><input id="g-fecha" type="date" value="${h(ultimoGafete.fecha)}" /></label>
+      </div>
+      <div>
+        <p class="etiqueta" style="margin-bottom:8px">¿Es reposición?</p>
+        <div class="chips-radio">
+          <label><input type="radio" name="g-rep" value="no" checked />No, es nuevo ingreso</label>
+          <label><input type="radio" name="g-rep" value="si" />Sí, reposición</label>
+        </div>
+      </div>
+      <div id="g-bloque-razon" class="oculto">
+        <p class="etiqueta" style="margin-bottom:8px">Razón (opcional)</p>
+        <div class="chips-radio">${Object.entries(RAZONES)
+          .map(([k, v]) => `<label><input type="radio" name="g-razon" value="${k}" />${h(v)}</label>`)
+          .join('')}</div>
+      </div>
+      ${
+        tipos.length
+          ? `<label class="campo"><span>Gafete</span><select id="g-art">${opcionesGafete(tipos, inicial)}</select><small>Si tienes un gafete dado de alta por sucursal, se elige solo.</small></label>`
+          : `<div class="rejilla">
+              <label class="campo"><span>Tipo de gafete</span><select id="g-tipo">${opcionesLista(estado.opciones.tiposGafete, estado.opciones.tiposGafete[0], null)}</select></label>
+              <label class="campo"><span>Costo por gafete (MXN) <em>*</em></span><input id="g-costo" type="number" min="0" step="0.01" inputmode="decimal" /></label>
+            </div><p class="tenue">Es tu primer gafete: con esto se da de alta el tipo de gafete y su costo.</p>`
+      }
+      <label style="display:flex;gap:8px;align-items:center;font-weight:600"><input type="checkbox" id="g-descontar" /> Descontar del inventario de gafetes</label>`,
+    pie: `<button class="btn" type="button" data-cerrar>Cancelar</button>
+      <button class="btn" type="button" data-guardar="otro">Guardar y registrar otro</button>
+      <button class="btn btn-primario" type="button" data-guardar="cerrar">Guardar</button>`,
+    alMontar: (dlg) => {
+      const $ = (s) => dlg.querySelector(s)
+      const ajustarDescontar = () => {
+        const a = articuloPorId($('#g-art')?.value)
+        $('#g-descontar').checked = Boolean(a && (Number(a.real) || 0) > 0)
+      }
+      ajustarDescontar()
+      $('#g-art')?.addEventListener('change', ajustarDescontar)
+      $('#g-sucursal').addEventListener('change', () => {
+        const propio = gafeteDeSucursal($('#g-sucursal').value, tipos)
+        if (propio && $('#g-art')) {
+          $('#g-art').value = propio.id
+          ajustarDescontar()
+        }
+      })
+      dlg.addEventListener('change', (e) => {
+        if (e.target.name === 'g-rep') $('#g-bloque-razon').classList.toggle('oculto', e.target.value !== 'si')
+      })
+      $('#g-nombre').focus()
+      const guardar = async (modo) => {
+        const nombre = $('#g-nombre').value.trim().replace(/\s+/g, ' ')
+        const sucursal = $('#g-sucursal').value
+        const reposicion = dlg.querySelector('input[name="g-rep"]:checked')?.value === 'si'
+        const fecha = $('#g-fecha').value || isoLocal()
+        if (nombre.length < 3 || !sucursal) {
+          toast('Falta el nombre del colaborador o la sucursal', true)
+          return
+        }
+        if (!tipos.length && $('#g-costo').value === '') {
+          toast('Escribe el costo por gafete', true)
+          return
+        }
+        const registro = {
+          nombre,
+          sucursal,
+          motivo: reposicion ? 'reposicion' : 'nuevo',
+          razon: reposicion ? (dlg.querySelector('input[name="g-razon"]:checked')?.value ?? null) : null,
+          fecha,
+        }
+        const repetido = gafetesRegistrados().some((m) => llaveGafete(m) === llaveGafete(registro))
+        if (repetido && !(await confirmar('Ya hay un gafete igual registrado', { aceptar: 'Registrar de todos modos', detalle: 'Mismo colaborador, sucursal, tipo y fecha.' }))) return
+        for (const b of dlg.querySelectorAll('[data-guardar]')) b.disabled = true
+        try {
+          const articulo = await asegurarArticuloGafete({
+            articuloId: $('#g-art')?.value,
+            tipo: $('#g-tipo')?.value,
+            costo: $('#g-costo')?.value,
+          })
+          await registrarGafetes([registro], { articulo, descontar: $('#g-descontar').checked })
+          ultimoGafete = { sucursal, fecha }
+          toast(`Gafete registrado: ${nombre}`)
+          dlg.cerrar()
+          if (modo === 'otro') dialogoGafete()
+        } catch (err) {
+          console.error(err)
+          toast('No se pudo registrar el gafete', true)
+          for (const b of dlg.querySelectorAll('[data-guardar]')) b.disabled = false
+        }
+      }
+      for (const b of dlg.querySelectorAll('[data-guardar]')) b.onclick = () => guardar(b.dataset.guardar)
+    },
+  })
+}
+
 
 // ---------- Nuevo artículo ----------
 
@@ -552,7 +731,9 @@ function dialogoConteo(articuloId = '') {
 
 // ---------- Excel ----------
 
-const COLUMNAS_PLANTILLA = ['Categoría', 'Tipo', 'Modelo / color', 'Unidad', 'Talla', 'Costo por pieza', 'Real', 'Deseado', 'Proveedor']
+const COLUMNAS_UNIFORMES = ['Categoría', 'Tipo', 'Modelo / color', 'Unidad', 'Talla', 'Costo por pieza', 'Real', 'Deseado', 'Proveedor']
+const COLUMNAS_GAFETES = ['Nombre del colaborador', 'Sucursal', 'Reposición (Sí/No)', 'Razón (si es reposición)', 'Fecha (opcional)']
+const filaDe = (columnas, valores) => Object.fromEntries(columnas.map((c, i) => [c, valores[i] ?? '']))
 
 function exportar() {
   const filas = ordenarArticulos(filtrados()).map((a) => {
@@ -576,86 +757,184 @@ function exportar() {
       Proveedor: a.proveedor ?? '',
     }
   })
-  descargarExcel(`Inventario gafetes y uniformes ${fechaArchivo()}.xlsx`, [{ nombre: 'Inventario', filas }])
+  const gafetes = gafetesRegistrados()
+    .sort((a, b) => (fechaMovimiento(b) ?? 0) - (fechaMovimiento(a) ?? 0))
+    .map((m) => ({
+      Fecha: m.fecha ?? '',
+      'Nombre del colaborador': m.colaborador ?? '',
+      Sucursal: m.sucursal ?? '',
+      'Reposición (Sí/No)': m.motivo === 'nuevo' ? 'No' : 'Sí',
+      Razón: m.motivo === 'nuevo' ? '' : RAZONES[m.razon] ?? '',
+      Detalle: m.detalleRazon ?? '',
+      'Tipo de gafete': m.articuloNombre ?? '',
+      Costo: totalMovimiento(m),
+      Inventario: Number(m.delta) ? 'Descontado' : 'Sin descontar',
+      Pedido: m.pedidoId ?? '',
+    }))
+  descargarExcel(`Inventario gafetes y uniformes ${fechaArchivo()}.xlsx`, [
+    { nombre: 'Inventario', filas },
+    { nombre: 'Gafetes por colaborador', filas: gafetes },
+  ])
 }
 
-function leerFilaImportada(f) {
-  const v = {}
-  for (const [k, val] of Object.entries(f)) v[normalizar(k).replace(/[^a-z]/g, '')] = typeof val === 'string' ? val.trim() : val
-  const cat = normalizar(v.categoria ?? '')
-  const categoria = cat.startsWith('g') ? 'gafete' : cat.startsWith('u') ? 'uniforme' : null
-  const tipo = String(v.tipo ?? '').trim()
-  if (!categoria || !tipo) return null
-  const unidad = String(v.unidad ?? '').trim()
-  return {
-    categoria,
-    tipo,
-    nombre: String(v.modelocolor ?? v.modelo ?? v.nombre ?? '').trim(),
-    unidad: !unidad || normalizar(unidad).startsWith('toda') ? 'Todas' : unidad,
-    talla: String(v.talla ?? '').trim() || null,
-    costo: limpiarNumero(v.costoporpieza ?? v.costo),
-    real: Math.round(limpiarNumero(v.real)),
-    deseado: Math.round(limpiarNumero(v.deseado)),
-    proveedor: String(v.proveedor ?? '').trim(),
-  }
+function descargarPlantilla() {
+  descargarExcel('Plantilla inventario gafetes y uniformes.xlsx', [
+    {
+      nombre: 'Uniformes',
+      filas: [
+        filaDe(COLUMNAS_UNIFORMES, ['Uniforme', 'Playera polo', 'Ejemplo azul marino', 'Vivo 47', 'M', 250, 10, 15, '']),
+        filaDe(COLUMNAS_UNIFORMES, ['Uniforme', 'Playera polo', 'Ejemplo azul marino', 'Vivo 47', 'L', 250, 8, 15, '']),
+      ],
+    },
+    {
+      nombre: 'Gafetes',
+      filas: [
+        filaDe(COLUMNAS_GAFETES, ['Ejemplo Ana López', 'Vivo 47 · Valle Real', 'No', '', '']),
+        filaDe(COLUMNAS_GAFETES, ['Ejemplo Luis Pérez', 'EasyFit · ITESO', 'Sí', 'Extravío', '20/11/2026']),
+      ],
+    },
+    { nombre: 'Sucursales', filas: estado.opciones.sucursales.map((s) => ({ 'Sucursales (copia el nombre tal cual)': s })) },
+    { nombre: 'Razones', filas: Object.values(RAZONES).map((r) => ({ 'Razones de reposición': r })) },
+  ])
 }
 
 function dialogoImportar() {
-  let filas = []
+  let articulos = []
+  let crudasGafetes = []
+  let gafetes = { lista: [], repetidos: 0, sinFecha: 0, noReconocidas: new Set(), nuevos: 0 }
+  const tipos = tiposGafete()
+  const hayPorSucursal = tipos.some((a) => a.unidad && a.unidad !== 'Todas')
   abrirDialogo({
-    titulo: 'Importar inventario desde Excel',
+    titulo: 'Importar desde Excel',
+    ancho: true,
     cuerpo: `
       <ol style="margin:0;padding-left:20px;display:grid;gap:6px">
-        <li>Descarga la plantilla y llénala (un renglón por talla).</li>
-        <li>En <b>Categoría</b> escribe Gafete o Uniforme. <b>Unidad</b> puede quedar vacía (= todas).</li>
-        <li>Súbela aquí. Si un artículo con esa talla ya existe, se actualizan su costo, real y deseado.</li>
+        <li>Descarga la plantilla. Tiene dos hojas: <b>Uniformes</b> (un renglón por talla, con costo, real y deseado) y <b>Gafetes</b> (un renglón por colaborador: nombre, sucursal y si es reposición).</li>
+        <li>Llena la hoja que necesites. Los renglones que dicen "Ejemplo" se ignoran.</li>
+        <li>Súbela aquí. Los uniformes que ya existen se actualizan y los gafetes que ya estén registrados no se duplican.</li>
       </ol>
       <div class="acciones"><button class="btn" type="button" id="plantilla">Descargar plantilla</button></div>
       <label class="campo"><span>Archivo de Excel</span><input id="archivo" type="file" accept=".xlsx,.xls,.csv" /></label>
-      <div id="vista-previa"></div>`,
+      <div id="vista-previa"></div>
+      <div id="opciones-gafetes" class="oculto" style="display:grid;gap:12px;border:1px solid var(--borde);border-radius:var(--radio);padding:14px;background:#fcfaf6">
+        <p class="etiqueta">Cómo registrar los gafetes</p>
+        <div class="rejilla">
+          ${
+            tipos.length
+              ? `<label class="campo"><span>${hayPorSucursal ? 'Gafete para las sucursales que no tienen uno propio' : 'Tipo de gafete (para el costo)'}</span><select id="g-art">${opcionesGafete(tipos, gafetePorDefecto(tipos))}</select>${hayPorSucursal ? '<small>Las sucursales con gafete propio (columna Unidad) usan el suyo.</small>' : ''}</label>`
+              : `<label class="campo"><span>Tipo de gafete</span><select id="g-tipo">${opcionesLista(estado.opciones.tiposGafete, estado.opciones.tiposGafete[0], null)}</select></label>
+                 <label class="campo"><span>Costo por gafete (MXN) <em>*</em></span><input id="g-costo" type="number" min="0" step="0.01" /></label>`
+          }
+          <label class="campo"><span>Fecha para renglones sin fecha</span><input id="g-fecha" type="date" value="${isoLocal()}" /><small>Si sabes cuándo se hicieron, ponla: cuenta para el gasto por mes.</small></label>
+        </div>
+        <label style="display:flex;gap:8px;align-items:center;font-weight:600"><input type="checkbox" id="g-descontar" /> Descontar del inventario de gafetes <span class="tenue" style="font-weight:500">(déjalo sin marcar si ya se entregaron)</span></label>
+      </div>`,
     pie: '<button class="btn" type="button" data-cerrar>Cancelar</button><button class="btn btn-primario" type="button" id="importar" disabled>Importar</button>',
     alMontar: (dlg) => {
-      dlg.querySelector('#plantilla').onclick = () =>
-        descargarExcel('Plantilla inventario gafetes y uniformes.xlsx', [
-          {
-            nombre: 'Inventario',
-            filas: [
-              Object.fromEntries(COLUMNAS_PLANTILLA.map((c, i) => [c, ['Uniforme', 'Playera polo', 'Azul marino', 'Vivo 47', 'M', 250, 10, 15, 'Proveedor X'][i]])),
-              Object.fromEntries(COLUMNAS_PLANTILLA.map((c, i) => [c, ['Gafete', 'Gafete PVC impreso', '', '', '', 45, 30, 40, ''][i]])),
-            ],
-          },
-        ])
-      dlg.querySelector('#archivo').onchange = async (e) => {
+      const $ = (s) => dlg.querySelector(s)
+      $('#plantilla').onclick = descargarPlantilla
+      const preparar = () => {
+        const fechaPorDefecto = $('#g-fecha').value || isoLocal()
+        const existentes = new Set(gafetesRegistrados().map(llaveGafete))
+        const r = { lista: [], repetidos: 0, sinFecha: 0, noReconocidas: new Set(), nuevos: 0, fechaPorDefecto }
+        for (const f of crudasGafetes) {
+          const g = leerGafete(f, { catalogo: estado.opciones.sucursales, fechaPorDefecto })
+          if (!g) continue
+          const k = llaveGafete(g)
+          if (existentes.has(k)) {
+            r.repetidos++
+            continue
+          }
+          existentes.add(k)
+          if (g.sinFecha) r.sinFecha++
+          if (!g.sucursalReconocida && g.sucursal) r.noReconocidas.add(g.sucursal)
+          if (g.motivo === 'nuevo') r.nuevos++
+          g.articulo = gafeteDeSucursal(g.sucursal, tipos)
+          r.lista.push(g)
+        }
+        gafetes = r
+      }
+      const pintar = () => {
+        preparar()
+        const partes = []
+        if (articulos.length) {
+          const existentes = new Set(estado.articulos.map((a) => `${a.grupo}|${a.talla ?? ''}`))
+          const actualizan = articulos.filter((f) => existentes.has(`${claveGrupo(f)}|${f.talla ?? ''}`)).length
+          partes.push(`<div><b>Uniformes y artículos:</b> ${articulos.length} renglón(es): ${articulos.length - actualizan} nuevos y ${actualizan} se actualizan.</div>`)
+        }
+        if (crudasGafetes.length) {
+          const g = gafetes
+          partes.push(
+            `<div><b>Gafetes:</b> ${g.lista.length} por registrar (${g.nuevos} de nuevo ingreso y ${g.lista.length - g.nuevos} reposiciones)${
+              g.repetidos ? `; ${g.repetidos} repetidos o ya registrados se omiten` : ''
+            }${g.sinFecha ? `; ${g.sinFecha} sin fecha quedan con fecha ${h(fechaCorta(g.fechaPorDefecto))}` : ''}.</div>`,
+          )
+          if (g.noReconocidas.size)
+            partes.push(`<div class="tenue">Sucursales que no están en tu catálogo (se guardan como vienen): ${[...g.noReconocidas].map(h).join(', ')}.</div>`)
+        }
+        const muestra = gafetes.lista.slice(0, 6)
+        $('#vista-previa').innerHTML = partes.length
+          ? `<div class="aviso aviso-info"><div style="display:grid;gap:4px">${partes.join('')}</div></div>${
+              muestra.length
+                ? `<div class="tabla-envoltura" style="margin-top:10px"><table><thead><tr><th>Colaborador</th><th>Sucursal</th><th>Reposición</th><th>Razón</th><th>Fecha</th><th>Gafete</th></tr></thead><tbody>${muestra
+                    .map(
+                      (g) => `<tr><td>${h(g.nombre)}</td><td>${h(g.sucursal)}</td><td>${g.motivo === 'nuevo' ? 'No' : 'Sí'}</td><td>${h(
+                        g.razon ? RAZONES[g.razon] : '',
+                      )}${g.detalle ? ` <span class="tenue">${h(g.detalle)}</span>` : ''}</td><td>${h(fechaCorta(g.fecha))}</td><td>${g.articulo ? h(etiquetaArticulo(g.articulo)) : '<span class="tenue">El elegido abajo</span>'}</td></tr>`,
+                    )
+                    .join('')}</tbody></table></div>${gafetes.lista.length > muestra.length ? `<p class="tenue" style="margin-top:6px">…y ${gafetes.lista.length - muestra.length} más.</p>` : ''}`
+                : ''
+            }`
+          : '<div class="aviso aviso-error"><div>No encontré renglones válidos. La hoja de uniformes necesita Categoría y Tipo; la de gafetes, Nombre del colaborador y Sucursal.</div></div>'
+        $('#opciones-gafetes').classList.toggle('oculto', !crudasGafetes.length)
+        $('#importar').disabled = !articulos.length && !gafetes.lista.length
+      }
+      $('#archivo').onchange = async (e) => {
         const archivo = e.target.files?.[0]
-        const vista = dlg.querySelector('#vista-previa')
         if (!archivo) return
         try {
           const XLSX = await cargarXLSX()
           const libro = XLSX.read(await archivo.arrayBuffer())
-          const crudas = XLSX.utils.sheet_to_json(libro.Sheets[libro.SheetNames[0]], { defval: '' })
-          filas = crudas.map(leerFilaImportada).filter(Boolean)
-          const omitidas = crudas.length - filas.length
-          const existentes = new Set(estado.articulos.map((a) => `${a.grupo}|${a.talla ?? ''}`))
-          const actualizan = filas.filter((f) => existentes.has(`${claveGrupo(f)}|${f.talla ?? ''}`)).length
-          vista.innerHTML = filas.length
-            ? `<div class="aviso aviso-info"><div><b>${filas.length} renglón(es) listos:</b> ${filas.length - actualizan} nuevos y ${actualizan} se actualizan.${omitidas ? ` Se omiten ${omitidas} sin categoría o tipo.` : ''}</div></div>`
-            : '<div class="aviso aviso-error"><div>No encontré renglones válidos. Revisa que existan las columnas Categoría y Tipo.</div></div>'
-          dlg.querySelector('#importar').disabled = !filas.length
+          articulos = []
+          crudasGafetes = []
+          for (const nombre of libro.SheetNames) {
+            const filas = XLSX.utils.sheet_to_json(libro.Sheets[nombre], { defval: '' })
+            const tipo = tipoHoja(filas)
+            if (tipo === 'articulos') articulos.push(...filas.map(leerArticulo).filter(Boolean))
+            if (tipo === 'gafetes') crudasGafetes.push(...filas)
+          }
+          pintar()
         } catch (err) {
           console.error(err)
-          vista.innerHTML = '<div class="aviso aviso-error"><div>No pude leer el archivo.</div></div>'
+          $('#vista-previa').innerHTML = '<div class="aviso aviso-error"><div>No pude leer el archivo.</div></div>'
         }
       }
-      dlg.querySelector('#importar').onclick = async () => {
-        dlg.querySelector('#importar').disabled = true
+      $('#g-fecha').addEventListener('change', () => crudasGafetes.length && pintar())
+      $('#importar').onclick = async () => {
+        if (gafetes.lista.length && !tipos.length && $('#g-costo').value === '') {
+          toast('Escribe el costo por gafete', true)
+          $('#g-costo').focus()
+          return
+        }
+        $('#importar').disabled = true
         try {
-          const r = await importarArticulos(filas)
-          toast(`Importado: ${r.creados} nuevos, ${r.actualizados} actualizados`)
+          const hecho = []
+          if (articulos.length) {
+            const r = await importarArticulos(articulos)
+            hecho.push(`${r.creados} artículos nuevos y ${r.actualizados} actualizados`)
+          }
+          if (gafetes.lista.length) {
+            const articulo = await asegurarArticuloGafete({ articuloId: $('#g-art')?.value, tipo: $('#g-tipo')?.value, costo: $('#g-costo')?.value })
+            await registrarGafetes(gafetes.lista, { articulo, descontar: $('#g-descontar').checked, nota: 'Importado de Excel' })
+            // (cada renglón con gafete de su sucursal ya trae su artículo en g.articulo)
+            hecho.push(`${gafetes.lista.length} gafetes registrados`)
+          }
+          toast(`Importado: ${hecho.join(' · ')}`)
           dlg.cerrar()
         } catch (err) {
           console.error(err)
           toast('No se pudo importar', true)
-          dlg.querySelector('#importar').disabled = false
+          $('#importar').disabled = false
         }
       }
     },

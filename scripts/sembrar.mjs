@@ -42,7 +42,7 @@ for (const [categoria, tipo, nombre, unidad, tallas, costo, real, deseado] of ca
 }
 
 const nombres = ['Ana Ruiz', 'Luis Torres', 'María López', 'Jorge Díaz', 'Sofía Herrera', 'Carlos Medina', 'Fernanda Gil', 'Raúl Castro', 'Paola Vega', 'Diego Ortiz', 'Elena Mora', 'Iván Rojas']
-const sucursales = ['Vivo 47 · Naciones Unidas', 'Vivo 47 · Valle Real', 'Vivo 47 · Gourmetería', 'EasyFit · Ávila Camacho', 'EasyFit · Iteso', 'EasyFit · Cañadas']
+const sucursales = ['Vivo 47 · Naciones Unidas', 'Vivo 47 · Valle Real', 'Vivo 47 · Gourmetería', 'EasyFit · Ávila Camacho', 'EasyFit · ITESO', 'EasyFit · Cañadas', 'GEB · Capital Humano']
 const roles = ['Coach Deportivo', 'Técnico de Orden y Limpieza', 'Recepción', 'Concierge', 'Coach de Estiramiento']
 const areas = ['Deportes', 'Mantenimiento y Servicios', 'Administración', 'Comercial']
 const razones = ['extravio', 'desgaste', 'desgaste', 'mal_estado', 'cambio_talla']

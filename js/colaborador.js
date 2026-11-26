@@ -22,6 +22,7 @@ import {
   isoLocal,
   MOTIVOS,
   nombreSucursal,
+  normalizar,
   nuevoFolio,
   opcionesCompletas,
   ordenTalla,
@@ -79,8 +80,15 @@ nav.addEventListener('click', (e) => {
 
 // ---------- Artículos que se pueden pedir ----------
 
-function gruposDisponibles(unidad) {
-  let grupos = opciones.grupos.filter((g) => !unidad || !g.unidad || g.unidad === 'Todas' || g.unidad === unidad)
+// Artículos que aplican a la sucursal: los de "Todas", los de su unidad (Vivo 47, EasyFit…) o los marcados con la sucursal.
+function gruposDisponibles(sucursal) {
+  const unidad = unidadDe(sucursal)
+  const corto = normalizar(String(sucursal ?? '').split(' · ').slice(1).join(' · '))
+  const aplica = (g) => !sucursal || !g.unidad || g.unidad === 'Todas' || g.unidad === unidad || normalizar(g.unidad) === corto || g.unidad === sucursal
+  let grupos = opciones.grupos.filter(aplica)
+  if (opciones.grupos.length && !grupos.some((g) => g.categoria === 'gafete')) {
+    grupos = [{ id: 'tipo-gafete', categoria: 'gafete', tipo: 'Gafete', nombre: '', tallas: [] }, ...grupos]
+  }
   if (!opciones.grupos.length) {
     grupos = [
       ...opciones.tiposGafete.map((t) => ({ id: `tipo-${slug('gafete ' + t)}`, categoria: 'gafete', tipo: t, nombre: '', tallas: [] })),
@@ -92,8 +100,8 @@ function gruposDisponibles(unidad) {
 
 const etiquetaGrupo = (g) => [g.tipo, g.nombre && g.nombre !== g.tipo ? g.nombre : null].filter(Boolean).join(' · ')
 
-function htmlArticulos(unidad) {
-  const grupos = gruposDisponibles(unidad)
+function htmlArticulos(sucursal) {
+  const grupos = gruposDisponibles(sucursal)
   if (!grupos.length) return '<p class="muted">Todavía no hay artículos configurados para tu unidad. Escribe lo que necesitas en comentarios.</p>'
   let html = ''
   for (const cat of ['gafete', 'uniforme']) {
@@ -200,7 +208,7 @@ function mostrarFormulario() {
 
       <div class="tarjeta">
         <div class="tarjeta-titulo"><h2><span class="seccion-num">3</span>¿Qué necesitas?</h2><p>Marca uno o varios</p></div>
-        <div class="lista-articulos" id="articulos">${htmlArticulos(unidadDe(datos.sucursal))}</div>
+        <div class="lista-articulos" id="articulos">${htmlArticulos(datos.sucursal)}</div>
         <label class="campo" style="margin-top:16px"><span>Comentarios (opcional)</span>
           <textarea name="comentarios" maxlength="600" rows="2" placeholder="Algo más que debamos saber"></textarea></label>
       </div>
@@ -224,7 +232,7 @@ function mostrarFormulario() {
     if (n === 'quien') document.getElementById('bloque-solicitante').classList.toggle('oculto', form.quien.value !== 'otro')
     if (n === 'sucursal') {
       const marcados = new Set([...form.querySelectorAll('input[name="art"]:checked')].map((i) => i.value))
-      document.getElementById('articulos').innerHTML = htmlArticulos(unidadDe(form.sucursal.value))
+      document.getElementById('articulos').innerHTML = htmlArticulos(form.sucursal.value)
       for (const i of form.querySelectorAll('input[name="art"]')) i.checked = marcados.has(i.value)
     }
     e.target.classList.remove('invalido')
@@ -279,7 +287,7 @@ function leerFormulario(form) {
     errores.push('Escribe el nombre de quien solicita.')
     malos.push('solicitadoPor')
   }
-  const grupos = gruposDisponibles(unidadDe(sucursal))
+  const grupos = gruposDisponibles(sucursal)
   const articulos = []
   for (const i of form.querySelectorAll('input[name="art"]:checked')) {
     const g = grupos.find((x) => x.id === i.value)
